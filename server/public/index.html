@@ -1,478 +1,944 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>Spalla</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spalla</title>
+<!--
+  SPALLA — dashboard v2 ("Spalla × Raycast")
+  ─────────────────────────────────────────────────────────────────────
+  Arquivo único, sem dependências. Tudo que é dado vem de `state`.
+  Pontos de integração estão marcados com  >>> INTEGRAÇÃO  <<<.
+
+  Regras do design system (não quebrar):
+  • Âmbar (--attn) só em needs_approval e waiting_input. Nada mais.
+  • Sem glow, sem halo, sem gradiente, sem glassmorphism na versão web.
+  • Atenção = posição (seção "Precisa de você" no topo) + filete de 2px.
+  • Mono só pra dado (tempo, task, PID, caminho). UI em Plex Sans.
+  • Todo comando tem atalho visível ao lado dele.
+  • O Spalla só avisa, nunca aprova: nenhuma ação de aprovar existe aqui.
+  • Vazio sempre explica o motivo.
+  • Texto de log entra via textContent (nunca innerHTML).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0e1116;--panel:#161b22;--line:#262d38;--txt:#d6dde6;--dim:#7d8896;--ok:#3fb950;--err:#f85149;--warn:#d29922;--info:#58a6ff;--run:#a371f7}
-*{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,Segoe UI,sans-serif}
-body{display:flex;flex-direction:column}
-header{display:flex;gap:12px;align-items:center;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
-header h1{font-size:14px;margin:0;font-weight:600}
-.chip{padding:2px 8px;border:1px solid var(--line);border-radius:3px;font-size:12px;color:var(--dim)}
-.chip.ok{color:var(--ok);border-color:var(--ok)}.chip.err{color:var(--err);border-color:var(--err)}.chip.run{color:var(--run);border-color:var(--run)}.chip.warn{color:var(--warn);border-color:var(--warn)}
-.sp{flex:1}
-button,select,input{background:#0b0f14;color:var(--txt);border:1px solid var(--line);border-radius:3px;padding:3px 8px;font:inherit}
-button{cursor:pointer}button:hover{border-color:var(--info)}
-nav{display:flex;gap:2px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
-nav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--dim)}
-nav button.on{color:var(--txt);border-bottom-color:var(--info)}
-nav .badge{margin-left:6px;background:var(--err);color:#fff;border-radius:8px;padding:0 6px;font-size:11px}
-main{flex:1;min-height:0;position:relative}
-section{position:absolute;inset:0;display:none;flex-direction:column;padding:10px 14px;gap:8px}
-section.on{display:flex}
-.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.progress{height:14px;background:#0b0f14;border:1px solid var(--line);border-radius:3px;overflow:hidden;flex:1;min-width:200px}
-.progress>i{display:block;height:100%;background:var(--info);width:0;transition:width .3s}
-.progress.ok>i{background:var(--ok)}.progress.err>i{background:var(--err)}
-.log{flex:1;min-height:0;overflow:auto;background:#0b0f14;border:1px solid var(--line);border-radius:3px;padding:6px 8px;font:12px/1.4 Consolas,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
-.log div{padding:0 2px}
-.log .hide{display:none}
-.log .e,.log .L-E{color:var(--err)}.log .L-W{color:var(--warn)}.log .L-I{color:#6cc08b}.log .L-D{color:var(--info)}.log .L-V{color:var(--dim)}
-.log .wrong{background:#3a1519;color:#ffb3ae}
-.log .crash{background:#4a1418;color:#ffd0cc;font-weight:600}
-.log .t{color:var(--dim)}
-.log mark{background:#5a4a00;color:#fff}
-.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;background:var(--panel);border:1px solid var(--line);padding:10px 14px;border-radius:3px;max-width:560px}
-.kv b{color:var(--dim);font-weight:400}
-table{border-collapse:collapse;width:100%}
-th,td{text-align:left;padding:5px 10px;border-bottom:1px solid var(--line)}
-th{color:var(--dim);font-weight:400}
-tr.click{cursor:pointer}tr.click:hover{background:var(--panel)}
-.ok{color:var(--ok)}.err{color:var(--err)}.dim{color:var(--dim)}.run{color:var(--run)}.warn{color:var(--warn)}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
-.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--dim);border-radius:3px;padding:8px 10px;cursor:pointer}
-.card h3{margin:0 0 4px;font-size:13px;display:flex;justify-content:space-between}
-.card .act{color:var(--dim);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.card.working,.card.tool{border-left-color:var(--info)}
-.card.needs_approval{border-left-color:var(--err)}.card.waiting_input{border-left-color:var(--warn)}
-.card.failed{border-left-color:var(--err)}.card.done{border-left-color:var(--ok)}.card.idle{border-left-color:var(--dim)}
-.card.stuck{border-left-color:var(--warn);border-style:dashed}
-.card.blink{animation:bl 1s steps(2,start) infinite}
-@keyframes bl{50%{background:#3a1519}}
-.feed{flex:1;min-height:0;overflow:auto;background:#0b0f14;border:1px solid var(--line);border-radius:3px;font:12px/1.5 Consolas,Menlo,monospace}
-.feed div{padding:1px 8px;border-bottom:1px solid #12171e}
-.mutes label{margin-right:12px;color:var(--dim)}
-.empty{color:var(--dim);padding:12px}
+/* ── Tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --r-key: 4px; --r-row: 6px; --r-block: 8px;
+  --attn-fill: #FFBF47;           /* marca: ponto da fermata, filete */
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0A0A0B; --panel: #111113; --elev: #18181B; --key: #222226;
+  --text: #F4F4F5; --text-2: #B4B4BB; --text-3: #8A8A93; --text-4: #5C5C66;
+  --line: rgba(255,255,255,.07); --line-2: rgba(255,255,255,.12); --sel: rgba(255,255,255,.06);
+  --key-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  --overlay-shadow: 0 16px 40px rgba(0,0,0,.5);
+  --attn: #FFBF47; --run: #5EB1FF; --ok: #4FD18B; --fail: #FF6B6B; --idle: #B4B4BB;
+  --p-exec: #5EB1FF; --p-utd: #2F5A80; --p-skip: #3A3A40; --p-rest: #1C1C20;
+  --run-bg: rgba(94,177,255,.08); --fail-bg: rgba(255,107,107,.08); --fail-text: #FFB4B4;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F6F6F7; --panel: #FFFFFF; --elev: #FFFFFF; --key: #FFFFFF;
+  --text: #18181B; --text-2: #4B4B55; --text-3: #5F5F69; --text-4: #71717A;
+  --line: rgba(0,0,0,.08); --line-2: rgba(0,0,0,.14); --sel: rgba(0,0,0,.05);
+  --key-shadow: 0 1px 0 rgba(0,0,0,.08);
+  --overlay-shadow: 0 16px 40px rgba(0,0,0,.14);
+  --attn: #A86A00; --run: #1F6FD1; --ok: #1E8A50; --fail: #C93636; --idle: #4B4B55;
+  --p-exec: #2F7FE0; --p-utd: #A9C8EF; --p-skip: #D4D4D8; --p-rest: #EDEDF0;
+  --run-bg: rgba(31,111,209,.07); --fail-bg: rgba(201,54,54,.07); --fail-text: #9B1C1C;
+}
+
+/* ── Base ───────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 400 14px/1.45 var(--font-sans); letter-spacing: .005em; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--run); outline-offset: 1px; }
+.mono { font-family: var(--font-mono); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.body { flex: 1; display: flex; flex-wrap: wrap; min-height: 0; }
+
+/* ── Topbar ─────────────────────────────────────────────────────────── */
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.brand b { font-weight: 600; }
+.brand .sep { color: var(--text-4); }
+.brand .project { color: var(--text-2); }
+.search { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 8px 0 12px; border-radius: var(--r-block); background: var(--panel); border: 1px solid var(--line-2); flex: 1 1 320px; max-width: 560px; }
+.search svg { color: var(--text-3); flex-shrink: 0; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 14px; }
+.search input::placeholder { color: var(--text-3); }
+.topbar-right { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 13px; color: var(--text-3); }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.conn { display: flex; align-items: center; gap: 6px; }
+.link-btn { border: 0; background: none; padding: 0; text-decoration: underline; cursor: pointer; color: var(--text-2); }
+.icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-row); border: 1px solid var(--line-2); background: var(--panel); color: var(--text-2); cursor: pointer; }
+
+/* ── Teclas ─────────────────────────────────────────────────────────── */
+kbd { min-width: 22px; height: 22px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-key); background: var(--key); border: 1px solid var(--line-2); box-shadow: var(--key-shadow); font: 500 12px var(--font-mono); color: var(--text-2); }
+.keys { display: inline-flex; gap: 4px; }
+
+/* ── Lista ──────────────────────────────────────────────────────────── */
+.list { flex: 1 1 340px; max-width: 100%; min-width: 0; padding: 8px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.list-header { padding: 12px 10px 4px; font-size: 12px; font-weight: 500; color: var(--text-3); }
+.row { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border: 0; border-radius: var(--r-row); background: transparent; text-align: left; cursor: pointer; width: 100%; }
+.row:hover { background: var(--sel); }
+.row[aria-selected="true"] { background: var(--sel); }
+.row .stripe { position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--attn-fill); }
+.row .glyph { width: 16px; display: flex; justify-content: center; flex-shrink: 0; }
+.row .name { font-size: 14px; font-weight: 500; white-space: nowrap; }
+.row .sub { font-size: 13px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.row .acc { font: 12px var(--font-mono); color: var(--text-3); white-space: nowrap; }
+.row.attn .acc { color: var(--attn); }
+.row.muted { opacity: .55; }
+.list-empty { padding: 24px 10px; color: var(--text-3); font-size: 13px; }
+
+/* ── Detalhe ────────────────────────────────────────────────────────── */
+.detail { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; padding: 24px 28px; }
+.title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+.title-row h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.title-row .clock { margin-left: auto; font: 28px var(--font-mono); }
+.prose { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-2); max-width: 640px; }
+.prose code { font-family: var(--font-mono); color: var(--text); }
+.task-label { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--text-3); }
+.task-name { font: 15px var(--font-mono); }
+.progress { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; }
+.metrics { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; border-radius: var(--r-block); overflow: hidden; border: 1px solid var(--line); background: var(--line); }
+.metrics > div { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--bg); }
+.metrics dt { font-size: 12px; color: var(--text-3); }
+.metrics dd { margin: 0; font: 14px var(--font-mono); }
+.events { display: flex; flex-direction: column; border-radius: var(--r-block); border: 1px solid var(--line); }
+.events > div { display: flex; gap: 14px; padding: 10px 14px; font-size: 13px; border-top: 1px solid var(--line); }
+.events > div:first-child { border-top: 0; }
+.events .when { font-family: var(--font-mono); color: var(--text-3); }
+.empty { display: flex; flex-direction: column; gap: 12px; padding: 48px 0; max-width: 520px; }
+.empty h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.empty .hint { display: flex; align-items: center; gap: 8px; padding-top: 8px; font-size: 13px; color: var(--text-2); }
+
+/* ── Log ────────────────────────────────────────────────────────────── */
+.log { display: flex; flex-direction: column; border-radius: var(--r-block); border: 1px solid var(--line); background: var(--panel); min-height: 0; }
+.log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+.log-toolbar .file { font: 12px var(--font-mono); color: var(--text-3); }
+.log-toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.log-toolbar .spacer { margin-left: auto; }
+.log-body { padding: 8px 0; font: 12px/1.85 var(--font-mono); overflow: auto; max-height: 52vh; }
+.ll { display: flex; gap: 14px; padding: 0 14px; white-space: pre; color: var(--text-2); }
+.ll .t { width: 56px; flex-shrink: 0; color: var(--text-4); }
+.ll .t:empty { display: none; }  /* logs do Gradle não têm horário; só mostra se o server mandar `t` */
+.ll.task { color: var(--text); }
+.ll.current { background: var(--run-bg); color: var(--text); }
+.ll.error { background: var(--fail-bg); color: var(--fail-text); }
+.ll.error .t { color: var(--fail); }
+.ll.group { color: var(--text-3); cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; }
+.ll.group:hover { color: var(--text-2); }
+.ll mark { background: var(--attn-fill); color: #18181B; border-radius: 2px; }
+
+/* ── Rodapé / barra de ações ───────────────────────────────────────── */
+.footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 44px; padding: 6px 12px 6px 20px; border-top: 1px solid var(--line); background: var(--panel); }
+.footer .state { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); flex: 1; min-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer .act { display: inline-flex; align-items: center; gap: 8px; border: 0; background: none; padding: 4px 6px; border-radius: var(--r-row); cursor: pointer; font-size: 13px; }
+.footer .act:hover { background: var(--sel); }
+.footer .act.secondary { color: var(--text-2); }
+.footer .divider { width: 1px; height: 16px; background: var(--line-2); }
+
+/* ── Painel de ações (Ctrl/⌘ K) ────────────────────────────────────── */
+.ap-backdrop { position: fixed; inset: 0; z-index: 10; }
+.ap { position: fixed; right: 16px; bottom: 56px; z-index: 11; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; border-radius: 12px; background: var(--elev); border: 1px solid var(--line-2); box-shadow: var(--overlay-shadow); overflow: hidden; }
+.ap-title { padding: 10px 14px; font-size: 12px; color: var(--text-3); border-bottom: 1px solid var(--line); }
+.ap-list { display: flex; flex-direction: column; gap: 2px; padding: 6px; max-height: 50vh; overflow: auto; }
+.ap-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: 0; border-radius: var(--r-row); background: transparent; cursor: pointer; text-align: left; width: 100%; font-size: 14px; }
+.ap-item[aria-selected="true"] { background: var(--sel); }
+.ap-item .label { flex: 1; }
+.ap-sep { height: 1px; margin: 4px 8px; background: var(--line); }
+.ap-filter { display: flex; padding: 10px 14px; border-top: 1px solid var(--line); }
+.ap-filter input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; }
+
+/* ── Toast (vive na barra, como no Raycast) ─────────────────────────── */
+.footer .toast { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+
+@media (max-width: 720px) {
+  .list { border-right: 0; border-bottom: 1px solid var(--line); }
+  .detail { padding: 20px 16px; }
+  .title-row .clock { margin-left: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .row, .ap-item, .footer .act { transition: background-color .12s ease; }
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>Spalla <span class="dim" id="proj"></span></h1>
-  <span class="chip" id="cEmu">emulador: —</span>
-  <span class="chip" id="cBuild">build: —</span>
-  <span class="chip" id="cConn">desconectado</span>
-  <span class="sp"></span>
-  <button id="btnNotif">Ativar notificações</button>
-</header>
-<nav id="nav"></nav>
-<main>
-  <section id="p-build">
-    <div class="bar">
-      <span class="chip" id="bBadge">—</span>
-      <div class="progress" id="bProg"><i></i></div>
-      <span id="bCount" class="dim"></span>
-      <span class="dim" id="bTime"></span>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg width="20" height="15" viewBox="0 0 24 18" role="img" aria-label="Spalla"><path d="M3 15 C3 5, 21 5, 21 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="13.5" r="2.4" fill="var(--attn-fill)"/></svg>
+      <b>Spalla</b><span class="sep">/</span><span class="project" id="project-name"></span>
     </div>
-    <div class="bar"><span class="dim">task:</span><span id="bTask" class="dim">—</span></div>
-    <div class="bar">
-      <input id="bSearch" placeholder="buscar no log" size="28">
-      <label class="dim"><input type="checkbox" id="bOnlyErr"> só erros</label>
-      <label class="dim"><input type="checkbox" id="bScroll" checked> auto-scroll</label>
-      <span class="dim" id="bFile"></span>
+    <label class="search" for="search">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 10.5 L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span class="sr-only">Buscar</span>
+      <input id="search" type="search" placeholder="Buscar agentes, builds, tasks, logs" autocomplete="off">
+      <kbd>/</kbd>
+    </label>
+    <div class="topbar-right">
+      <span class="conn" id="conn"></span>
+      <span id="notif"></span>
+      <button class="icon-btn" id="theme-btn" type="button"></button>
     </div>
-    <div class="log" id="bLog"></div>
-  </section>
+  </header>
 
-  <section id="p-logcat">
-    <div class="bar">
-      <select id="lLevel"><option>V</option><option>D</option><option>I</option><option>W</option><option>E</option></select>
-      <input id="lFilter" placeholder="filtrar por tag/texto" size="28">
-      <button id="lPause">Pausar</button>
-      <button id="lClear">Limpar tela</button>
-      <label class="dim"><input type="checkbox" id="lScroll" checked> auto-scroll</label>
-      <span class="dim" id="lInfo"></span>
-    </div>
-    <div class="log" id="lLog"></div>
-  </section>
+  <div class="body">
+    <nav class="list" id="list" aria-label="Agentes, builds e dispositivo" role="listbox"></nav>
+    <main class="detail" id="detail" aria-live="polite"></main>
+  </div>
 
-  <section id="p-metro">
-    <div class="bar">
-      <input id="mFilter" placeholder="filtrar" size="28">
-      <label class="dim"><input type="checkbox" id="mOnlyErr"> só erros de JS</label>
-      <label class="dim"><input type="checkbox" id="mScroll" checked> auto-scroll</label>
-      <span class="chip" id="mChip">metro: —</span>
-    </div>
-    <div class="log" id="mLog"></div>
-  </section>
+  <footer class="footer" id="footer"></footer>
+</div>
 
-  <section id="p-emu">
-    <div class="kv" id="emuKv"></div>
-  </section>
-
-  <section id="p-hist">
-    <div style="overflow:auto"><table id="hTable"><thead><tr><th>Início</th><th>Variant</th><th>Duração</th><th>Resultado</th><th>Log</th></tr></thead><tbody></tbody></table></div>
-    <div class="bar"><span class="dim" id="hName"></span></div>
-    <div class="log" id="hLog" style="display:none"></div>
-  </section>
-
-  <section id="p-agents">
-    <div class="cards" id="cards"></div>
-    <div class="bar mutes" id="mutes"></div>
-    <div class="bar">
-      <select id="aAgent"><option value="">todos os agentes</option></select>
-      <select id="aType"><option value="">todos os tipos</option><option>working</option><option>tool</option><option>needs_approval</option><option>waiting_input</option><option>done</option><option>failed</option><option>idle</option></select>
-      <span class="dim">O dashboard só avisa. Aprovações e respostas continuam no terminal de cada agente.</span>
-    </div>
-    <div class="feed" id="feed"></div>
-  </section>
-</main>
+<div id="ap-root"></div>
 
 <script>
+(() => {
 'use strict';
-const $ = (s) => document.querySelector(s);
-const TABS = [['build','Build'],['logcat','Logcat'],['metro','Metro'],['emu','Emulador'],['hist','Histórico'],['agents','Agentes']];
-const S = { cfg:{}, status:{}, progress:{total:0,done:0}, current:null, emu:{}, history:[], agents:[], init:false };
-const MAXDOM = 5000;
-let tab = localStorage.getItem('dd.tab') || 'build';
 
-// ---------------------------------------------------------------- util
-const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const fmtDur = (ms) => { if (ms == null) return '—'; const s = Math.round(ms/1000); return s >= 60 ? Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s' : s+'s'; };
-const fmtTime = (t) => new Date(t).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-const ago = (t) => fmtDur(Math.max(0, Date.now() - new Date(t).getTime()));
+/* ═══════════════════════════════════════════════════════════════════
+   Plataforma: no Windows o modificador é Ctrl, no Mac é ⌘.
+   ═══════════════════════════════════════════════════════════════════ */
+const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const MOD = IS_MAC ? '⌘' : 'Ctrl';
 
-// ---------------------------------------------------------------- abas
-const nav = $('#nav');
-for (const [id, label] of TABS) {
-  const b = document.createElement('button');
-  b.dataset.tab = id; b.innerHTML = label + (id === 'agents' ? '<span class="badge" id="agBadge" style="display:none"></span>' : '');
-  b.onclick = () => setTab(id);
-  nav.appendChild(b);
-}
-function setTab(id) {
-  tab = id; localStorage.setItem('dd.tab', id);
-  for (const b of nav.children) b.classList.toggle('on', b.dataset.tab === id);
-  for (const [t] of TABS) $('#p-' + t).classList.toggle('on', t === id);
-  const log = { build:'#bLog', logcat:'#lLog', metro:'#mLog' }[id];
-  if (log) autoscroll(log);
-}
-function autoscroll(sel) {
-  const on = { '#bLog':'#bScroll', '#lLog':'#lScroll', '#mLog':'#mScroll' }[sel];
-  if ($(on).checked) $(sel).scrollTop = $(sel).scrollHeight;
-}
+/* ═══════════════════════════════════════════════════════════════════
+   ESTADO
+   Estado inicial: GET /api/state. Mudanças: SSE em /stream (ver final do arquivo).
+   ═══════════════════════════════════════════════════════════════════ */
+const MIN = 60 * 1000;
 
-// ---------------------------------------------------------------- notificações / som
-const muted = JSON.parse(localStorage.getItem('dd.muted') || '{}');
-const saveMuted = () => localStorage.setItem('dd.muted', JSON.stringify(muted));
-let audio;
-function beep(freq = 880) {
-  try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
-    const o = audio.createOscillator(), g = audio.createGain();
-    o.frequency.value = freq; o.connect(g); g.connect(audio.destination);
-    g.gain.setValueAtTime(0.12, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35);
-    o.start(); o.stop(audio.currentTime + 0.35);
-  } catch (_) {}
-}
-function notify(kind, agent, title, body) {
-  if (muted['t:' + kind] || (agent && muted['a:' + agent])) return;
-  beep(kind === 'failed' ? 440 : 880);
-  if ('Notification' in window && Notification.permission === 'granted') {
-    try { new Notification(title, { body, tag: kind + (agent || '') }); } catch (_) {}
-  }
-}
-$('#btnNotif').onclick = async () => {
-  if (!('Notification' in window)) return;
-  const p = await Notification.requestPermission();
-  beep(660);
-  refreshNotifBtn(p);
+const EMPTY = {
+  config: { name: '', package: '', stuckAfterMinutes: 10 },
+  connection: 'reconnecting',           // 'connected' | 'reconnecting' | 'offline'
+  agents: [],
+  build: { id: 'current', variant: 'debug', status: 'idle', startedAt: Date.now(), endedAt: null, task: '',
+    counts: { executed: 0, upToDate: 0, fromCache: 0, skipped: 0 }, totalKnown: false, total: 0, log: null, lines: [] },
+  history: [],
+  device: { adb: false, serial: null, booted: false, installed: false, running: false, wrapperPhase: 'idle' },
+  metro: { running: false, port: 8081, lines: [] },
+  logcat: { lines: [] }
 };
-function refreshNotifBtn(p) {
-  const b = $('#btnNotif');
-  p = p || (('Notification' in window) ? Notification.permission : 'denied');
-  b.textContent = p === 'granted' ? 'Notificações ativas' : p === 'denied' ? 'Notificações bloqueadas' : 'Ativar notificações';
-}
-refreshNotifBtn();
 
-// ---------------------------------------------------------------- logs genéricos
-function lineWrap(sel) { return $(sel); }
-function trimDom(el) { while (el.childElementCount > MAXDOM) el.removeChild(el.firstChild); }
-
-// ---------- Build
-const B = { wrong: false, q: '', onlyErr: false };
-const ERR_RE = /^e: |error:|\bFAILURE\b|What went wrong|^\* |Execution failed|BUILD FAILED|\bFAILED\b/i;
-function buildClass(l) {
-  if (/^\* What went wrong:/.test(l)) { B.wrong = true; return 'wrong'; }
-  if (/^\* Try:|^\* Exception is:|^BUILD /.test(l)) B.wrong = false;
-  if (B.wrong) return 'wrong';
-  if (/^e: |error:|\bFAILURE\b|BUILD FAILED/i.test(l) || /^> Task .* FAILED/.test(l)) return 'e';
-  return '';
-}
-function addBuild(lines) {
-  const el = $('#bLog'), frag = document.createDocumentFragment();
-  for (const l of lines) {
-    const d = document.createElement('div'); d.textContent = l;
-    const c = buildClass(l); if (c) d.className = c;
-    d._raw = l; d._err = !!c;
-    applyBuildFilter(d); frag.appendChild(d);
-  }
-  el.appendChild(frag); trimDom(el); autoscroll('#bLog');
-}
-function applyBuildFilter(d) {
-  const q = B.q.toLowerCase();
-  let hide = (B.onlyErr && !d._err) || (q && !d._raw.toLowerCase().includes(q));
-  d.classList.toggle('hide', !!hide);
-}
-function refilterBuild() { for (const d of $('#bLog').children) applyBuildFilter(d); }
-$('#bSearch').oninput = (e) => { B.q = e.target.value; refilterBuild(); };
-$('#bOnlyErr').onchange = (e) => { B.onlyErr = e.target.checked; refilterBuild(); };
-function resetBuild() { $('#bLog').innerHTML = ''; B.wrong = false; }
-
-function renderBuild() {
-  const st = S.status, p = S.progress;
-  const result = st.result || (st.phase === 'building' ? 'running' : null);
-  const chip = $('#bBadge'), prog = $('#bProg');
-  const label = result === 'SUCCESS' ? 'SUCCESS' : result === 'FAILED' ? 'FAILED' : result === 'running' ? 'RUNNING' : 'SEM BUILD';
-  chip.textContent = label;
-  chip.className = 'chip ' + (result === 'SUCCESS' ? 'ok' : result === 'FAILED' ? 'err' : result === 'running' ? 'run' : '');
-  const total = Math.max(p.total, p.done, 1);
-  let pct = p.total ? Math.min(100, (p.done / total) * 100) : 0;
-  if (result === 'running' && pct > 99) pct = 99;
-  if (result === 'SUCCESS') pct = 100;
-  prog.firstElementChild.style.width = pct + '%';
-  prog.className = 'progress ' + (result === 'SUCCESS' ? 'ok' : result === 'FAILED' ? 'err' : '');
-  $('#bCount').textContent = p.total ? `${p.done}/${p.total} tasks (${p.executed} exec · ${p.upToDate} up-to-date · ${p.fromCache} cache)` : (result === 'running' ? 'calculando grafo…' : '');
-  $('#bTask').textContent = result === 'running' ? (S.current || '—') : (p.failedTasks.length ? 'falhou: ' + p.failedTasks.join(', ') : '—');
-  $('#bFile').textContent = st.logFile || '';
-  const c = $('#cBuild');
-  c.textContent = 'build: ' + (result === 'running' ? `${Math.round(pct)}%` : result || '—');
-  c.className = 'chip ' + (result === 'SUCCESS' ? 'ok' : result === 'FAILED' ? 'err' : result === 'running' ? 'run' : '');
-  tickBuildTime();
-}
-function tickBuildTime() {
-  const st = S.status; if (!st.startedAt) { $('#bTime').textContent = ''; return; }
-  const end = st.finishedAt || Date.now();
-  $('#bTime').textContent = fmtDur(end - st.startedAt);
-}
-setInterval(tickBuildTime, 1000);
-
-// ---------- Logcat
-const LV = { V:0, D:1, I:2, W:3, E:4, F:4, A:4 };
-const L = { paused:false, buf:[], crash:0, q:'', min:0 };
-const TT = /^(\d\d-\d\d \d\d:\d\d:\d\d\.\d+)\s+(\d+)\s+(\d+)\s+([VDIWEFA])\s+(.*?):\s?(.*)$/;
-function logcatEl(l) {
-  const m = TT.exec(l), d = document.createElement('div');
-  let lvl = 'I';
-  if (m) {
-    lvl = m[4]; d._tag = m[5];
-    d.innerHTML = `<span class="t">${m[1]} ${m[2]}</span> ${lvl} <b>${esc(m[5])}</b>: ${esc(m[6])}`;
-  } else d.textContent = l;
-  d._raw = l; d._lv = LV[lvl] ?? 2;
-  if (/FATAL EXCEPTION/.test(l)) { L.crash = 25; d.className = 'crash'; }
-  else if (L.crash > 0 && d._lv >= 4) { L.crash--; d.className = 'crash'; }
-  else d.className = 'L-' + (lvl === 'F' || lvl === 'A' ? 'E' : lvl);
-  d.classList.toggle('hide', !logcatVisible(d));
-  return d;
-}
-function logcatVisible(d) {
-  if (d.classList.contains('crash')) return true;
-  if (d._lv < L.min) return false;
-  return !L.q || d._raw.toLowerCase().includes(L.q);
-}
-function addLogcat(lines) {
-  if (L.paused) { L.buf.push(...lines); $('#lInfo').textContent = L.buf.length + ' linhas em espera'; return; }
-  const el = $('#lLog'), frag = document.createDocumentFragment();
-  for (const l of lines) frag.appendChild(logcatEl(l));
-  el.appendChild(frag); trimDom(el); autoscroll('#lLog');
-}
-function refilterLogcat() { for (const d of $('#lLog').children) d.classList.toggle('hide', !logcatVisible(d)); }
-$('#lLevel').onchange = (e) => { L.min = LV[e.target.value]; refilterLogcat(); };
-$('#lFilter').oninput = (e) => { L.q = e.target.value.toLowerCase(); refilterLogcat(); };
-$('#lPause').onclick = () => {
-  L.paused = !L.paused; $('#lPause').textContent = L.paused ? 'Retomar' : 'Pausar';
-  if (!L.paused) { const b = L.buf; L.buf = []; $('#lInfo').textContent = ''; addLogcat(b); }
+const ui = {
+  selected: 'build:current',
+  theme: readPref('spalla.theme') || 'dark',
+  query: '',
+  onlyErrors: false,
+  groupNoise: true,
+  expandedGroups: new Set(),
+  muted: new Set(readPref('spalla.muted', true) || []),
+  actionPanel: null,              // { items, index, filter }
+  toast: null                     // { kind, text, until }
 };
-$('#lClear').onclick = () => { $('#lLog').innerHTML = ''; };
 
-// ---------- Metro
-const M = { q:'', onlyErr:false };
-const JSERR = /error|unable to resolve|syntaxerror|transformerror|invariant violation|red ?box|bundling failed|\bwarn\b.*require cycle|✖/i;
-function addMetro(lines) {
-  const el = $('#mLog'), frag = document.createDocumentFragment();
-  for (const l of lines) {
-    const d = document.createElement('div'); d.textContent = l; d._raw = l;
-    if (JSERR.test(l)) { d.className = 'e'; d._err = true; }
-    applyMetroFilter(d); frag.appendChild(d);
-  }
-  el.appendChild(frag); trimDom(el); autoscroll('#mLog');
-}
-function applyMetroFilter(d) {
-  const q = M.q.toLowerCase();
-  d.classList.toggle('hide', (M.onlyErr && !d._err) || (q && !d._raw.toLowerCase().includes(q)));
-}
-$('#mFilter').oninput = (e) => { M.q = e.target.value; for (const d of $('#mLog').children) applyMetroFilter(d); };
-$('#mOnlyErr').onchange = (e) => { M.onlyErr = e.target.checked; for (const d of $('#mLog').children) applyMetroFilter(d); };
+let state = EMPTY;
 
-// ---------- Emulador
-function renderEmu() {
-  const e = S.emu, c = $('#cEmu');
-  const state = !e.adb ? 'adb indisponível' : !e.online ? 'sem device' : !e.boot ? 'iniciando…' : 'pronto';
-  c.textContent = 'emulador: ' + state;
-  c.className = 'chip ' + (state === 'pronto' ? 'ok' : e.online ? 'warn' : 'err');
-  const yn = (v) => v ? '<span class="ok">sim</span>' : '<span class="dim">não</span>';
-  $('#emuKv').innerHTML =
-    `<b>adb</b><span>${yn(e.adb)}</span><b>device</b><span>${e.serial ? esc(e.serial) : '<span class="dim">nenhum</span>'}</span>` +
-    `<b>boot completo</b><span>${yn(e.boot)}</span><b>app instalado</b><span>${yn(e.installed)} <span class="dim">${esc(S.cfg.package || '')}</span></span>` +
-    `<b>app rodando</b><span>${e.pid ? '<span class="ok">sim</span> <span class="dim">pid ' + e.pid + '</span>' : '<span class="dim">não</span>'}</span>` +
-    `<b>fase do wrapper</b><span>${esc(S.status.phase || '—')}</span>`;
+/* ═══════════════════════════════════════════════════════════════════
+   Utilitários
+   ═══════════════════════════════════════════════════════════════════ */
+function readPref(key, json) {
+  try { const v = localStorage.getItem(key); return json ? JSON.parse(v) : v; } catch { return null; }
+}
+function writePref(key, value) {
+  try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch {}
+}
+/** h('div.cls', {attrs}, ...children) — cria DOM sem innerHTML. */
+function h(tag, attrs, ...kids) {
+  const [name, ...classes] = tag.split('.');
+  const el = document.createElement(name || 'div');
+  if (classes.length) el.className = classes.join(' ');
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) el.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (k === 'style') el.style.cssText = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+/** replaceChildren que ignora null/false (o nativo escreve "null" na tela). */
+function fill(el, ...kids) { el.replaceChildren(...kids.flat().filter(k => k != null && k !== false)); }
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svg(markup, size = 13) {
+  const el = document.createElementNS(SVG_NS, 'svg');
+  el.setAttribute('width', size); el.setAttribute('height', size);
+  el.setAttribute('viewBox', '0 0 16 16'); el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = markup; // markup estático deste arquivo, nunca dado externo
+  return el;
+}
+const GLYPHS = {
+  fermata: () => { const s = svg('', 16); s.setAttribute('viewBox', '0 0 24 18'); s.innerHTML = '<path d="M3 15 C3 5, 21 5, 21 15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="13.5" r="2.6" fill="currentColor"/>'; return s; },
+  ring:    () => svg('<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/>'),
+  x:       () => svg('<path d="M4 4 L12 12 M12 4 L4 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+  dot:     () => svg('<circle cx="8" cy="8" r="4.5" fill="currentColor"/>'),
+  diamond: () => svg('<path d="M8 3 L13 8 L8 13 L3 8 Z" fill="currentColor"/>'),
+  dotted:  () => svg('<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="1.5 3" stroke-linecap="round"/>'),
+  check:   () => svg('<path d="M3 8.5 L6.5 12 L13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'),
+  dash:    () => svg('<path d="M3 8 H13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>')
+};
+function keys(...ks) { return h('span.keys', null, ks.map(k => h('kbd', null, k === 'MOD' ? MOD : k))); }
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
+  if (hh) return `${hh}h${String(mm).padStart(2, '0')}m`;
+  if (mm) return `${mm}m${String(ss).padStart(2, '0')}s`;
+  return `${ss}s`;
+}
+function fmtAgo(ts) {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
+}
+function fmtClock(ts) { return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+/** Duração do build: corre enquanto roda; depois de terminar fica congelada em endedAt. */
+function buildElapsed(b) {
+  const end = b.status === 'running' ? Date.now() : (b.endedAt || Date.now());
+  return Math.max(0, (end - b.startedAt) / 1000);
+}
+function matches(q, ...fields) { if (!q) return true; q = q.toLowerCase(); return fields.some(f => String(f || '').toLowerCase().includes(q)); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Regras de estado
+   ═══════════════════════════════════════════════════════════════════ */
+function agentView(a) {
+  const stuck = (a.state === 'working' || a.state === 'tool') &&
+                Date.now() - a.lastEventAt > state.config.stuckAfterMinutes * MIN;
+  const map = {
+    needs_approval: { glyph: 'fermata', color: 'var(--attn)', label: 'esperando aprovação', attn: true },
+    waiting_input:  { glyph: 'ring',    color: 'var(--attn)', label: 'esperando sua resposta', attn: true },
+    failed:         { glyph: 'x',       color: 'var(--fail)', label: 'falhou' },
+    working:        { glyph: 'dot',     color: 'var(--run)',  label: 'trabalhando' },
+    tool:           { glyph: 'diamond', color: 'var(--run)',  label: 'usando ferramenta' },
+    done:           { glyph: 'check',   color: 'var(--ok)',   label: 'terminou' },
+    idle:           { glyph: 'dash',    color: 'var(--text-3)', label: 'parado' }
+  };
+  const v = stuck ? { glyph: 'dotted', color: 'var(--idle)', label: 'sem eventos, talvez travado' } : (map[a.state] || map.idle);
+  return { ...v, stuck, rank: v.attn ? 0 : a.state === 'failed' ? 1 : stuck ? 3 : (a.state === 'working' || a.state === 'tool') ? 2 : a.state === 'done' ? 4 : 5 };
 }
 
-// ---------- Histórico
-function renderHist() {
-  const tb = $('#hTable tbody'); tb.innerHTML = '';
-  if (!S.history.length) { tb.innerHTML = '<tr><td colspan="5" class="empty">nenhum build registrado</td></tr>'; return; }
-  for (const h of S.history) {
-    const tr = document.createElement('tr'); tr.className = 'click';
-    tr.innerHTML = `<td>${fmtTime(h.startedAt)}</td><td>${esc(h.variant || '')}</td><td>${fmtDur(h.durationMs)}</td><td class="${h.result === 'SUCCESS' ? 'ok' : 'err'}">${esc(h.result || '')}</td><td class="dim">${esc(h.logFile || '')}</td>`;
-    tr.onclick = () => openHistLog(h);
-    tb.appendChild(tr);
-  }
-}
-async function openHistLog(h) {
-  if (!h.logFile) return;
-  const el = $('#hLog'); el.style.display = 'block'; $('#hName').textContent = h.logFile;
-  const r = await fetch('/api/log?f=' + encodeURIComponent(h.logFile));
-  const txt = await r.text(); el.innerHTML = '';
-  let wrong = false; const frag = document.createDocumentFragment();
-  for (const l of txt.split('\n')) {
-    const d = document.createElement('div'); d.textContent = l;
-    if (/^\* What went wrong:/.test(l)) wrong = true; else if (/^\* Try:|^BUILD /.test(l)) wrong = false;
-    if (wrong) d.className = 'wrong'; else if (/^e: |error:|BUILD FAILED/i.test(l)) d.className = 'e';
-    frag.appendChild(d);
-  }
-  el.appendChild(frag); el.scrollTop = el.scrollHeight;
-}
+function buildItems() {
+  const q = ui.query;
+  const items = [];
+  const agents = state.agents.map(a => ({ a, v: agentView(a) })).sort((x, y) => x.v.rank - y.v.rank);
 
-// ---------- Agentes
-const PEND = new Set(['needs_approval', 'waiting_input', 'failed']);
-const ICON = { working:'▶', tool:'⚙', needs_approval:'■', waiting_input:'?', done:'✓', failed:'✕', idle:'·' };
-const acked = JSON.parse(localStorage.getItem('dd.acked') || '{}');
-const A = { agents: new Map(), events: [] };
-function grp(t) { return t === 'tool' ? 'working' : t; }
-function ingestAgent(ev, live) {
-  A.events.push(ev); if (A.events.length > 1500) A.events.shift();
-  let a = A.agents.get(ev.agent);
-  if (!a) { a = { name: ev.agent, evs: [] }; A.agents.set(ev.agent, a); updateAgentSelect(); }
-  const prev = a.last;
-  a.last = ev; a.project = ev.project || a.project;
-  if (!prev || grp(prev.type) !== grp(ev.type)) a.since = ev.ts;
-  if (ev.type === 'tool' || ev.tool) a.lastTool = ev;
-  if (live) {
-    const label = { needs_approval:'precisa de aprovação', waiting_input:'aguardando você', failed:'falhou' }[ev.type];
-    if (label) notify(ev.type, ev.agent, `${ev.agent} ${label}`, ev.message || ev.command || '');
-  }
-}
-function updateAgentSelect() {
-  const sel = $('#aAgent'), cur = sel.value;
-  sel.innerHTML = '<option value="">todos os agentes</option>' + [...A.agents.keys()].sort().map((n) => `<option>${esc(n)}</option>`).join('');
-  sel.value = cur;
-  renderMutes();
-}
-function renderMutes() {
-  const types = ['needs_approval', 'waiting_input', 'failed', 'build'];
-  $('#mutes').innerHTML = '<span class="dim">Silenciar:</span> ' +
-    types.map((t) => `<label><input type="checkbox" data-m="t:${t}" ${muted['t:' + t] ? 'checked' : ''}> ${t}</label>`).join('') +
-    [...A.agents.keys()].sort().map((n) => `<label><input type="checkbox" data-m="a:${esc(n)}" ${muted['a:' + n] ? 'checked' : ''}> ${esc(n)}</label>`).join('');
-  for (const i of $('#mutes').querySelectorAll('input')) i.onchange = () => { muted[i.dataset.m] = i.checked; saveMuted(); };
-}
-function agentState(a) {
-  const stuckMs = (S.cfg.stuckMinutes || 5) * 60000;
-  const idle = Date.now() - new Date(a.last.ts).getTime();
-  const stuck = (a.last.type === 'working' || a.last.type === 'tool') && idle > stuckMs;
-  const pend = PEND.has(a.last.type) && acked[a.name] !== a.last.ts;
-  return { stuck, pend };
-}
-function renderAgents() {
-  const list = [...A.agents.values()].map((a) => ({ a, s: agentState(a) }));
-  list.sort((x, y) => (y.s.pend - x.s.pend) || (new Date(y.a.last.ts) - new Date(x.a.last.ts)));
-  const cards = $('#cards');
-  cards.innerHTML = list.length ? '' : '<div class="empty">Nenhum evento de agente ainda. Os hooks gravam em .devdash/agents/events.jsonl.</div>';
-  for (const { a, s } of list) {
-    const t = a.last.type, d = document.createElement('div');
-    d.className = `card ${t}${s.stuck ? ' stuck' : ''}${s.pend ? ' blink' : ''}`;
-    const act = a.lastTool ? `${a.lastTool.tool || ''} ${a.lastTool.command || ''}`.trim() : (a.last.message || '');
-    d.innerHTML = `<h3><span>${ICON[t] || '·'} ${esc(a.name)}</span><span class="dim">${esc(t)}${s.stuck ? ' · possivelmente travado' : ''}</span></h3>` +
-      `<div class="act" title="${esc(act)}">${esc(act) || '—'}</div>` +
-      `<div class="dim">há ${ago(a.since)} · ${esc(a.project || '')}${a.last.cwd && a.last.cwd !== '.' ? ' · ' + esc(a.last.cwd) : ''}</div>`;
-    d.onclick = () => { acked[a.name] = a.last.ts; localStorage.setItem('dd.acked', JSON.stringify(acked)); renderAgents(); };
-    cards.appendChild(d);
-  }
-  const pend = list.filter((x) => x.s.pend).length;
-  document.title = (pend ? `(${pend}) ` : '') + 'Spalla';
-  const bd = $('#agBadge'); bd.style.display = pend ? '' : 'none'; bd.textContent = pend;
-  renderFeed();
-}
-function renderFeed() {
-  const fa = $('#aAgent').value, ft = $('#aType').value, el = $('#feed');
-  const evs = A.events.filter((e) => (!fa || e.agent === fa) && (!ft || e.type === ft)).slice(-400).reverse();
-  el.innerHTML = '';
-  for (const e of evs) {
-    const d = document.createElement('div');
-    const cls = e.type === 'failed' || e.type === 'needs_approval' ? 'err' : e.type === 'waiting_input' ? 'warn' : e.type === 'done' ? 'ok' : '';
-    d.innerHTML = `<span class="dim">${new Date(e.ts).toLocaleTimeString('pt-BR')}</span> <b>${esc(e.agent)}</b> <span class="${cls}">${esc(e.type)}</span> ${esc([e.tool, e.command, e.message].filter(Boolean).join(' · '))}`;
-    el.appendChild(d);
-  }
-}
-$('#aAgent').onchange = renderFeed; $('#aType').onchange = renderFeed;
-setInterval(renderAgents, 5000);
-
-// ---------------------------------------------------------------- SSE
-let es;
-function connect() {
-  es = new EventSource('/stream');
-  es.onopen = () => { $('#cConn').textContent = 'conectado'; $('#cConn').className = 'chip ok'; };
-  es.onerror = () => { $('#cConn').textContent = 'reconectando…'; $('#cConn').className = 'chip warn'; };
-  es.addEventListener('init', (m) => {
-    const d = JSON.parse(m.data);
-    S.cfg = d.config; S.status = d.status; S.progress = d.progress; S.current = d.current; S.emu = d.emu; S.history = d.history;
-    $('#proj').textContent = '— ' + d.config.name;
-    $('#mChip').textContent = 'metro: porta ' + d.config.metroPort;
-    resetBuild(); addBuild(d.build);
-    $('#lLog').innerHTML = ''; L.buf = []; addLogcat(d.logcat);
-    $('#mLog').innerHTML = ''; addMetro(d.metro);
-    A.agents.clear(); A.events = []; for (const e of d.agents) ingestAgent(e, false);
-    S.init = true; renderBuild(); renderEmu(); renderHist(); renderAgents(); renderMutes(); setTab(tab);
+  const attn = agents.filter(x => x.v.attn);
+  const rest = agents.filter(x => !x.v.attn);
+  const agentItem = ({ a, v }) => ({
+    id: 'agent:' + a.id, kind: 'agent', ref: a, glyph: v.glyph, color: v.color, attn: !!v.attn,
+    name: a.name, sub: v.stuck ? v.label : (a.message || v.label), acc: fmtAgo(a.lastEventAt),
+    muted: ui.muted.has(a.id)
   });
-  es.addEventListener('status', (m) => {
-    const old = S.status; S.status = JSON.parse(m.data);
-    const was = old.result, now = S.status.result;
-    if (S.init && was === 'running' && (now === 'SUCCESS' || now === 'FAILED')) {
-      notify('build', null, 'Build ' + now, `${S.status.variant || ''} em ${fmtDur(S.status.durationMs)}`);
+  if (attn.length) items.push({ header: 'Precisa de você' }, ...attn.map(agentItem));
+  if (rest.length) items.push({ header: 'Agentes' }, ...rest.map(agentItem));
+
+  const b = state.build;
+  const builds = [];
+  if (b && b.status !== 'idle') {
+    builds.push({ id: 'build:current', kind: 'build', ref: b, glyph: b.status === 'running' ? 'dot' : b.status === 'failed' ? 'x' : 'check',
+      color: b.status === 'running' ? 'var(--run)' : b.status === 'failed' ? 'var(--fail)' : 'var(--ok)',
+      name: b.variant, sub: b.status === 'running' ? b.task : b.status === 'failed' ? 'falhou' : 'ok', acc: fmtDur(buildElapsed(b)), live: true });
+  }
+  for (const hst of state.history) {
+    builds.push({ id: 'hist:' + hst.id, kind: 'history', ref: hst, glyph: hst.result === 'failed' ? 'x' : 'check',
+      color: hst.result === 'failed' ? 'var(--fail)' : 'var(--ok)',
+      name: hst.startedAt.split(' ').pop().slice(0, 5), sub: `${hst.variant} ${hst.result === 'failed' ? 'falhou' : 'ok'}`, acc: fmtDur(hst.durationSec) });
+  }
+  if (builds.length) items.push({ header: 'Builds' }, ...builds);
+
+  const d = state.device;
+  items.push({ header: 'Dispositivo' },
+    { id: 'dev:emulator', kind: 'emulator', glyph: d.booted ? 'check' : 'dash', color: d.booted ? 'var(--ok)' : 'var(--text-3)',
+      name: d.serial || 'emulador', sub: d.booted ? (d.installed ? `${state.config.package} instalado` : 'app não instalado') : 'desligado' },
+    { id: 'dev:metro', kind: 'metro', glyph: state.metro.running ? 'dot' : 'dash', color: state.metro.running ? 'var(--run)' : 'var(--text-3)',
+      name: 'Metro', sub: state.metro.running ? `porta ${state.metro.port}` : `parado na porta ${state.metro.port}` },
+    { id: 'dev:logcat', kind: 'logcat', glyph: d.running ? 'dot' : 'dash', color: d.running ? 'var(--run)' : 'var(--text-3)',
+      name: 'Logcat', sub: d.running ? `${state.logcat.lines.length} linhas` : 'app não está rodando' });
+
+  if (!q) return items;
+  // Filtra mantendo cabeçalhos só quando a seção tem resultados.
+  const out = []; let header = null;
+  for (const it of items) {
+    if (it.header) { header = it; continue; }
+    if (matches(q, it.name, it.sub, it.ref && it.ref.task, it.ref && it.ref.log)) {
+      if (header) { out.push(header); header = null; }
+      out.push(it);
     }
-    renderBuild(); renderEmu();
-  });
-  es.addEventListener('progress', (m) => { S.progress = JSON.parse(m.data); renderBuild(); });
-  es.addEventListener('build', (m) => {
-    const d = JSON.parse(m.data);
-    if (d.reset) resetBuild();
-    if (d.current !== undefined) S.current = d.current;
-    addBuild(d.lines); renderBuild();
-  });
-  es.addEventListener('logcat', (m) => { const d = JSON.parse(m.data); if (d.reset) $('#lLog').innerHTML = ''; addLogcat(d.lines); });
-  es.addEventListener('metro', (m) => { const d = JSON.parse(m.data); if (d.reset) $('#mLog').innerHTML = ''; addMetro(d.lines); });
-  es.addEventListener('emu', (m) => { S.emu = JSON.parse(m.data); renderEmu(); });
-  es.addEventListener('history', (m) => { S.history = JSON.parse(m.data); renderHist(); });
-  es.addEventListener('agents', (m) => {
-    const d = JSON.parse(m.data);
-    for (const e of d.events) ingestAgent(e, S.init);
-    renderAgents();
-  });
+  }
+  return out;
 }
-setTab(tab);
+const selectable = items => items.filter(i => !i.header);
+
+/* ═══════════════════════════════════════════════════════════════════
+   Log: classificação + agrupamento de ruído
+   ═══════════════════════════════════════════════════════════════════ */
+const RE_ERROR = /(^e: )|(\berror:)|FAILURE|What went wrong|FATAL EXCEPTION|BUILD FAILED/i;
+const RE_TASK = /^> Task /;
+const RE_NOISE_START = /CMake Deprecation Warning|Call Stack \(most recent call first\)/;
+const RE_NOISE_CONT = /^C\/C\+\+:\s{2,}/;
+const LOG_CAP = 1500;   // linhas desenhadas quando não há busca nem filtro (o resto continua na memória)
+
+function classify(lines) {
+  // lines: string[] ou {t?, text}[]
+  const norm = lines.map(l => typeof l === 'string' ? { text: l } : l);
+  const out = []; let group = null;
+  norm.forEach((l, i) => {
+    const kind = RE_ERROR.test(l.text) ? 'error' : RE_TASK.test(l.text) ? 'task' : 'plain';
+    const noise = kind !== 'error' && (RE_NOISE_START.test(l.text) || (group && RE_NOISE_CONT.test(l.text)));
+    if (noise && ui.groupNoise) {
+      if (!group) { group = { kind: 'group', id: 'g' + i, lines: [] }; out.push(group); }
+      group.lines.push({ ...l, kind: 'plain' });
+    } else {
+      group = null;
+      out.push({ ...l, kind });
+    }
+  });
+  return out;
+}
+
+const logCache = new Map();   // arquivo -> { state: 'loading' | 'ok' | 'error', lines }
+function fetchLog(file) {
+  const c = logCache.get(file);
+  if (c && c.state === 'ok') return Promise.resolve(c.lines);
+  return fetch('/api/logs/' + encodeURIComponent(file))
+    .then(r => r.ok ? r.text() : Promise.reject(new Error('http ' + r.status)))
+    .then(t => { const lines = t.split('\n'); if (lines.length && lines[lines.length - 1] === '') lines.pop(); logCache.set(file, { state: 'ok', lines }); return lines; });
+}
+function histLog(file) {
+  if (!file) return h('p.prose', null, 'Este build não tem arquivo de log.');
+  const c = logCache.get(file);
+  if (!c) {
+    logCache.set(file, { state: 'loading' });
+    fetchLog(file).catch(() => logCache.set(file, { state: 'error' })).finally(scheduleRender);
+  }
+  if (!c || c.state === 'loading') return h('p.prose', null, 'Carregando o log…');
+  if (c.state === 'error') return h('p.prose', null, `Não consegui ler ${file}. O arquivo pode ter sido apagado.`);
+  return renderLog(c.lines, { file });
+}
+
+function renderLog(lines, { file, current } = {}) {
+  const body = h('div.log-body', { role: 'log', 'aria-label': 'Linhas do log' });
+  const q = ui.query;
+  const total = lines.length;
+  const capped = !ui.onlyErrors && !q && total > LOG_CAP;
+  const rows = classify(capped ? lines.slice(-LOG_CAP) : lines);
+  let lastTaskIndex = -1;
+  rows.forEach((r, i) => { if (r.kind === 'task') lastTaskIndex = i; });
+
+  const line = (l, extra) => {
+    const cls = ['ll', l.kind === 'task' ? 'task' : '', l.kind === 'error' ? 'error' : '', extra || ''].filter(Boolean).join('.');
+    const text = h('span');
+    if (q && l.text.toLowerCase().includes(q.toLowerCase())) {
+      const idx = l.text.toLowerCase().indexOf(q.toLowerCase());
+      text.append(l.text.slice(0, idx), h('mark', null, l.text.slice(idx, idx + q.length)), l.text.slice(idx + q.length));
+    } else text.textContent = l.text;
+    return h('div.' + cls, null, h('span.t', null, l.t ? fmtClock(l.t) : ''), text);
+  };
+
+  rows.forEach((r, i) => {
+    if (r.kind === 'group') {
+      const open = ui.expandedGroups.has(r.id);
+      if (ui.onlyErrors) return;
+      body.append(h('button.ll.group', { type: 'button', 'aria-expanded': String(open), onclick: () => { open ? ui.expandedGroups.delete(r.id) : ui.expandedGroups.add(r.id); render(); } },
+        h('span.t', null, ''), `${open ? '−' : '+'} ${r.lines.length} linhas de aviso do CMake ${open ? '(recolher)' : '(expandir)'}`));
+      if (open) r.lines.forEach(l => body.append(line(l)));
+      return;
+    }
+    if (ui.onlyErrors && r.kind !== 'error') return;
+    if (q && !ui.onlyErrors && !r.text.toLowerCase().includes(q.toLowerCase()) && r.kind !== 'task') return;
+    body.append(line(r, current && i === lastTaskIndex ? 'current' : ''));
+  });
+  if (!body.childElementCount) body.append(h('div.ll', null, h('span.t'), ui.onlyErrors ? 'Nenhum erro neste log.' : 'Nada encontrado.'));
+
+  const toolbar = h('div.log-toolbar', null,
+    (file || capped) ? h('span.file', null, [file, capped ? `últimas ${LOG_CAP} de ${total} linhas` : ''].filter(Boolean).join(' · ')) : null,
+    h('span.spacer'),
+    h('label', null, h('input', { type: 'checkbox', checked: ui.onlyErrors, onchange: e => { ui.onlyErrors = e.target.checked; render(); } }), 'Só erros'),
+    h('label', null, h('input', { type: 'checkbox', checked: ui.groupNoise, onchange: e => { ui.groupNoise = e.target.checked; render(); } }), 'Agrupar avisos repetidos'));
+  return h('section.log', { 'aria-label': 'Log' }, toolbar, body);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Ações
+   >>> INTEGRAÇÃO <<<  Spalla.onAction é chamado com (actionId, item).
+   Ligue cada id ao endpoint real do server.js. Nenhuma ação aprova.
+   ═══════════════════════════════════════════════════════════════════ */
+function actionsFor(item) {
+  if (!item) return [];
+  const A = (id, label, k, sep) => ({ id, label, keys: k, sep });
+  switch (item.kind) {
+    case 'build': return [A('open-log', 'Abrir log do build', ['↵']), A('copy-task', 'Copiar task atual', ['MOD', 'C']), A('stop-build', 'Parar build', ['MOD', '.']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
+    case 'history': return [A('open-log', 'Abrir log', ['↵']), A('copy-first-error', 'Copiar primeiro erro', ['MOD', '⇧', 'C']), A('rebuild', 'Rodar build de novo', ['MOD', 'R']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
+    case 'agent': {
+      const v = agentView(item.ref);
+      const list = [];
+      if (v.stuck) list.push(A('mark-idle', 'Marcar como idle', ['↵']));
+      else if (item.ref.log) list.push(A('open-log', 'Abrir log citado', ['↵']));
+      else list.push(A('copy-name', 'Copiar nome do agente', ['↵']));
+      list.push(A('mute', ui.muted.has(item.ref.id) ? `Reativar avisos de ${item.ref.name}` : `Silenciar ${item.ref.name}`, ['MOD', 'M']));
+      if (!v.stuck) list.push(A('mark-idle', 'Marcar como idle', ['MOD', 'I']));
+      list.push(A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true));
+      return list;
+    }
+    case 'emulator': return [A('open-app', 'Abrir o app', ['↵']), A('boot-avd', 'Ligar emulador', ['MOD', 'B']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
+    case 'metro': return [A(state.metro.running ? 'stop-metro' : 'start-metro', state.metro.running ? 'Parar Metro' : 'Subir Metro', ['↵']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
+    case 'logcat': return [A('open-app', 'Abrir o app', ['↵']), A('clear-logcat', 'Limpar tela', ['MOD', 'L']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
+  }
+  return [];
+}
+
+function runAction(id, item) {
+  if (id === 'toggle-theme') return setTheme(ui.theme === 'dark' ? 'light' : 'dark');
+  if (id === 'mute' && item && item.kind === 'agent') {
+    ui.muted.has(item.ref.id) ? ui.muted.delete(item.ref.id) : ui.muted.add(item.ref.id);
+    writePref('spalla.muted', [...ui.muted]);
+    showToast('ok', ui.muted.has(item.ref.id) ? `${item.ref.name} silenciado` : `Avisos de ${item.ref.name} reativados`);
+    return render();
+  }
+  if (id === 'mark-idle' && item && item.kind === 'agent') {
+    item.ref.state = 'idle'; item.ref.lastEventAt = Date.now();
+    showToast('ok', `${item.ref.name} marcado como idle`);
+  }
+  if (id === 'copy-task' && state.build) copy(state.build.task, 'Task copiada');
+  if (id === 'copy-name' && item) copy(item.ref.name, 'Nome copiado');
+  if (id === 'clear-logcat') state.logcat.lines = [];
+  Spalla.onAction(id, item);
+  render();
+}
+function copy(text, msg) {
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+    .then(() => showToast('ok', msg), () => showToast('fail', 'Não deu pra copiar'));
+}
+function showToast(kind, text, ms = 3000) { ui.toast = { kind, text, until: Date.now() + ms }; render(); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Render
+   ═══════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+
+function currentItem(items) {
+  const sel = selectable(items);
+  return sel.find(i => i.id === ui.selected) || sel[0] || null;
+}
+
+function renderTopbar() {
+  $('project-name').textContent = state.config.name;
+  const conn = $('conn'); conn.replaceChildren(
+    h('span.dot', { style: `background: var(${state.connection === 'connected' ? '--ok' : state.connection === 'reconnecting' ? '--attn' : '--fail'})` }),
+    state.connection === 'connected' ? 'conectado' : state.connection === 'reconnecting' ? 'reconectando…' : 'sem conexão');
+  const notif = $('notif');
+  const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+  notif.replaceChildren(perm === 'granted' ? '' : perm === 'unsupported' ? 'Notificações indisponíveis' :
+    h('span', null, perm === 'denied' ? 'Notificações bloqueadas no navegador' : 'Notificações desligadas', perm === 'default' ? ' · ' : '',
+      perm === 'default' ? h('button.link-btn', { type: 'button', onclick: () => Notification.requestPermission().then(render) }, 'ativar') : ''));
+  const btn = $('theme-btn');
+  const dark = ui.theme === 'dark';
+  btn.setAttribute('aria-label', dark ? 'Mudar para tema claro' : 'Mudar para tema escuro');
+  btn.title = `${dark ? 'Tema claro' : 'Tema escuro'} (${MOD}+J)`;
+  btn.replaceChildren(dark
+    ? svg('<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.4 3.4L4.4 4.4M11.6 11.6L12.6 12.6M3.4 12.6L4.4 11.6M11.6 4.4L12.6 3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>', 16)
+    : svg('<path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5 5.5 5.5 0 1 0 13.5 9.5Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>', 16));
+}
+
+function renderList(items, cur) {
+  const list = $('list');
+  if (!selectable(items).length) { list.replaceChildren(h('div.list-empty', null, `Nada encontrado pra “${ui.query}”.`)); return; }
+  list.replaceChildren(...items.map(it => {
+    if (it.header) return h('div.list-header', { role: 'presentation' }, it.header);
+    const isSel = cur && it.id === cur.id;
+    return h('button.row' + (it.attn ? '.attn' : '') + (it.muted ? '.muted' : ''), {
+      type: 'button', role: 'option', 'aria-selected': String(!!isSel), 'data-id': it.id,
+      onclick: () => { ui.selected = it.id; render(); }
+    },
+      it.attn ? h('span.stripe', { 'aria-hidden': 'true' }) : null,
+      h('span.glyph', { style: `color: ${it.color}` }, GLYPHS[it.glyph]()),
+      h('span.name', null, it.name),
+      h('span.sub', null, it.sub),
+      it.acc ? h('span.acc', null, it.acc) : null);
+  }));
+  const selEl = list.querySelector('[aria-selected="true"]');
+  if (selEl && document.activeElement && document.activeElement.closest && document.activeElement.closest('#list')) selEl.focus({ preventScroll: true });
+  if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+}
+
+function statusChip(color, glyph, text) {
+  return h('span.status', { style: `color: ${color}` }, GLYPHS[glyph](), text);
+}
+function metrics(pairs) {
+  return h('dl.metrics', null, pairs.map(([k, v]) => h('div', null, h('dt', null, k), h('dd', null, v))));
+}
+function emptyState(title, body, action, ks) {
+  return h('div.empty', null, h('h1', null, title), h('p.prose', null, body),
+    action ? h('div.hint', null, h('span', null, action), keys(...ks)) : null);
+}
+
+function renderDetail(cur) {
+  const d = $('detail');
+  if (!cur) { fill(d, emptyState('Nada selecionado', 'Use ↑ ↓ pra escolher um item da lista.')); return; }
+
+  if (cur.kind === 'build') {
+    const b = cur.ref, c = b.counts, done = c.executed + c.upToDate + c.fromCache + c.skipped;
+    const avg = state.history.length ? state.history.reduce((s, x) => s + x.durationSec, 0) / state.history.length : null;
+    const rest = b.totalKnown && b.total ? Math.max(0, b.total - done) : Math.max(1, Math.round(done * 0.03));
+    fill(d, 
+      h('div.title-row', null, h('h1', null, `Build ${b.variant}`),
+        b.status === 'running' ? statusChip('var(--run)', 'dot', 'rodando') : b.status === 'failed' ? statusChip('var(--fail)', 'x', 'falhou') : statusChip('var(--ok)', 'check', 'concluído'),
+        h('span.clock', b.status === 'running' ? { 'data-live-clock': b.startedAt } : null, fmtDur(buildElapsed(b)))),
+      h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
+        h('div.task-label', null, h('span', null, 'Task atual'),
+          h('span', null, b.totalKnown ? `${done} de ${b.total} tasks` : `${done} concluídas, total ainda sendo descoberto`)),
+        h('div.task-name', null, b.task),
+        h('div.progress', { role: 'img', 'aria-label': `${c.executed} executadas, ${c.upToDate} up-to-date, ${c.fromCache} do cache, ${c.skipped} puladas` },
+          h('div', { style: `flex:${c.executed};background:var(--p-exec)` }),
+          h('div', { style: `flex:${c.upToDate};background:var(--p-utd)` }),
+          c.fromCache ? h('div', { style: `flex:${c.fromCache};background:var(--ok)` }) : null,
+          h('div', { style: `flex:${c.skipped};background:var(--p-skip)` }),
+          h('div', { style: `flex:${rest};background:var(--p-rest)` }))),
+      metrics([['Executadas', c.executed], ['Up-to-date', c.upToDate], ['Do cache', c.fromCache], ['Puladas', c.skipped], ['Variant', b.variant], ['Média recente', avg ? fmtDur(avg) : '—']]),
+      renderLog(b.lines, { file: b.log, current: b.status === 'running' }));
+    return;
+  }
+
+  if (cur.kind === 'history') {
+    const x = cur.ref;
+    const streak = (() => { let n = 0; for (const s of state.history) { if (s.result === 'failed') n++; else break; } return n; })();
+    fill(d, 
+      h('div.title-row', null, h('h1', null, `Build ${x.variant} · ${x.startedAt.split(' ').pop().slice(0, 5)}`),
+        x.result === 'failed' ? statusChip('var(--fail)', 'x', `falhou · exit ${x.exit}`) : statusChip('var(--ok)', 'check', 'concluído')),
+      metrics([['Início', x.startedAt], ['Duração', fmtDur(x.durationSec)], ['Agente', x.agent || '—'], ['Log', x.log]]),
+      x.result === 'failed'
+        ? h('p.prose', null, streak > 1 ? `Faz parte de ${streak} falhas seguidas. ` : '', 'Abra o log pra ver as linhas com ', h('code', null, 'e:'), ', ', h('code', null, 'FAILURE'), ' e “What went wrong”, já destacadas.')
+        : null,
+      histLog(x.log));
+    return;
+  }
+
+  if (cur.kind === 'agent') {
+    const a = cur.ref, v = agentView(a);
+    const body = v.stuck
+      ? h('p.prose', null, `O último evento foi às ${fmtClock(a.lastEventAt).slice(0, 5)}, “${a.message}”. Ele pode ter travado, ou terminado sem mandar o evento de fim. Se já terminou, marque como idle pra tirá-lo da lista de atenção.`)
+      : v.attn
+        ? h('p.prose', null, a.state === 'needs_approval' ? `${a.name} está esperando aprovação. Aprove no terminal dele, onde dá pra ver o comando completo.` : `${a.name} está esperando sua resposta no terminal dele.`)
+        : a.message ? h('p.prose', null, a.message) : null;
+    fill(d, 
+      h('div.title-row', null, h('h1', null, a.name), statusChip(v.color, v.glyph, v.stuck ? `${a.state}, sem eventos há ${fmtAgo(a.lastEventAt)}` : v.label)),
+      body,
+      a.events && a.events.length
+        ? h('div.events', { 'aria-label': 'Eventos' }, a.events.slice(0, 20).map(e => h('div', null, h('span.when', null, fmtClock(e.at)), h('span', null, e.state), h('span', { style: 'color:var(--text-3)' }, e.message))))
+        : null);
+    return;
+  }
+
+  if (cur.kind === 'emulator') {
+    const x = state.device;
+    if (!x.adb) return fill(d, emptyState('adb não encontrado', 'O Spalla não achou o adb no PATH. Confira o Android SDK.', null));
+    if (!x.booted) return fill(d, emptyState('Emulador desligado', `Nenhum device conectado. O AVD configurado pode ser ligado daqui.`, 'Ligar emulador', ['MOD', 'B']));
+    fill(d, 
+      h('div.title-row', null, h('h1', null, x.serial), statusChip('var(--ok)', 'check', 'pronto')),
+      metrics([['Boot completo', x.booted ? 'sim' : 'não'], ['App instalado', x.installed ? 'sim' : 'não'], ['App rodando', x.running ? 'sim' : 'não'], ['Fase do wrapper', x.wrapperPhase]]),
+      !x.running ? h('p.prose', null, x.wrapperPhase === 'building' ? 'O app não está aberto: o wrapper ainda está na fase de build.' : 'O app não está aberto.') : null);
+    return;
+  }
+
+  if (cur.kind === 'metro') {
+    const m = state.metro;
+    if (!m.running || !m.lines.length) return fill(d, emptyState(m.running ? 'Metro sem saída ainda' : 'Metro parado',
+      m.running ? `Rodando na porta ${m.port}, aguardando o primeiro bundle.` : `Nada rodando na porta ${m.port}. Ele sobe sozinho com spalla run, depois do build.`,
+      m.running ? null : 'Subir o Metro agora', ['↵']));
+    fill(d, h('div.title-row', null, h('h1', null, 'Metro'), statusChip('var(--run)', 'dot', `porta ${m.port}`)), renderLog(m.lines, {}));
+    return;
+  }
+
+  if (cur.kind === 'logcat') {
+    const x = state.device;
+    if (!x.running || !state.logcat.lines.length) return fill(d, emptyState('Sem logs do app ainda',
+      x.running ? 'O app está rodando, mas ainda não escreveu nada no Logcat.' : `O Logcat filtra pelo PID do ${state.config.package}, e o app não está rodando. As linhas aparecem aqui assim que ele abrir.`,
+      x.running ? null : 'Abrir o app', ['↵']));
+    fill(d, h('div.title-row', null, h('h1', null, 'Logcat'), statusChip('var(--run)', 'dot', state.config.package)), renderLog(state.logcat.lines, {}));
+  }
+}
+
+function renderFooter(cur) {
+  const f = $('footer');
+  const t = ui.toast && ui.toast.until > Date.now() ? ui.toast : null;
+  const b = state.build;
+  const summary = [
+    b && b.status === 'running' ? `Build rodando · ${fmtDur((Date.now() - b.startedAt) / 1000)}` : b && b.status === 'failed' ? 'Último build falhou' : 'Nenhum build rodando',
+    state.device.booted ? `${state.device.serial} pronto` : 'emulador desligado',
+    state.metro.running ? `Metro :${state.metro.port}` : 'Metro parado'
+  ].join(' · ');
+  const left = t
+    ? h('span.state.toast', { role: 'status' }, h('span', { style: `color: var(--${t.kind === 'fail' ? 'fail' : 'ok'})` }, GLYPHS[t.kind === 'fail' ? 'x' : 'check']()), t.text)
+    : h('span.state', null, h('span.dot', { style: `background: var(${b && b.status === 'running' ? '--run' : b && b.status === 'failed' ? '--fail' : '--text-4'})` }), summary);
+  const acts = actionsFor(cur);
+  const primary = acts[0];
+  fill(f, left,
+    primary ? h('button.act', { type: 'button', onclick: () => runAction(primary.id, cur) }, primary.label, keys('↵')) : null,
+    h('span.divider', { 'aria-hidden': 'true' }),
+    h('button.act.secondary', { type: 'button', onclick: () => openActionPanel(cur) }, 'Ações', keys('MOD', 'K')));
+}
+
+function openActionPanel(cur) {
+  ui.actionPanel = { item: cur, items: actionsFor(cur), index: 0, filter: '' };
+  render();
+  const input = document.querySelector('.ap-filter input'); if (input) input.focus();
+}
+function closeActionPanel() { ui.actionPanel = null; render(); }
+
+function renderActionPanel() {
+  const root = $('ap-root');
+  const ap = ui.actionPanel;
+  if (!ap) { root.replaceChildren(); return; }
+  const filtered = ap.items.filter(a => matches(ap.filter, a.label));
+  ap.index = Math.min(ap.index, Math.max(0, filtered.length - 1));
+  const list = h('div.ap-list', { role: 'listbox', 'aria-label': 'Ações' });
+  filtered.forEach((a, i) => {
+    if (a.sep && i > 0) list.append(h('div.ap-sep', { role: 'presentation' }));
+    list.append(h('button.ap-item', { type: 'button', role: 'option', 'aria-selected': String(i === ap.index),
+      onclick: () => { closeActionPanel(); runAction(a.id, ap.item); } }, h('span.label', null, a.label), keys(...a.keys)));
+  });
+  if (!filtered.length) list.append(h('div.list-empty', null, 'Nenhuma ação com esse nome.'));
+  const prevInput = document.querySelector('.ap-filter input');
+  const hadFocus = prevInput && document.activeElement === prevInput;
+  const input = h('input', { type: 'text', placeholder: 'Buscar ações…', value: ap.filter, 'aria-label': 'Buscar ações',
+    oninput: e => { ap.filter = e.target.value; ap.index = 0; renderActionPanel(); } });
+  root.replaceChildren(
+    h('div.ap-backdrop', { onclick: closeActionPanel }),
+    h('div.ap', { role: 'dialog', 'aria-label': 'Ações' },
+      h('div.ap-title', null, ap.item ? `${ap.item.name} · ${ap.item.sub}` : 'Ações'),
+      list,
+      h('div.ap-filter', null, input)));
+  if (hadFocus || !prevInput) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
+
+function setTheme(t) {
+  ui.theme = t;
+  document.documentElement.setAttribute('data-theme', t);
+  writePref('spalla.theme', t);
+  render();
+}
+
+function pendingCount() { return state.agents.filter(a => a.state === 'needs_approval' || a.state === 'waiting_input').length; }
+
+function render() {
+  document.documentElement.setAttribute('data-theme', ui.theme);
+  const items = buildItems();
+  const cur = currentItem(items);
+  if (cur) ui.selected = cur.id;
+  renderTopbar();
+  renderList(items, cur);
+  const lb = document.querySelector('.log-body');
+  const prev = lb ? { id: ui.lastDetail, top: lb.scrollTop, bottom: lb.scrollHeight - lb.scrollTop - lb.clientHeight < 48 } : null;
+  renderDetail(cur);
+  const nb = document.querySelector('.log-body');
+  if (nb) nb.scrollTop = (!prev || prev.id !== ui.selected || prev.bottom) ? nb.scrollHeight : prev.top;
+  ui.lastDetail = ui.selected;
+  renderFooter(cur);
+  renderActionPanel();
+  const n = pendingCount();
+  document.title = `${n ? `(${n}) ` : ''}Spalla — ${state.config.name}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Teclado
+   /            focar busca
+   ↑ ↓          mover seleção
+   ↵            ação principal
+   Ctrl/⌘ K     painel de ações
+   Ctrl/⌘ J     alternar tema
+   Esc          fechar painel / sair da busca
+   ═══════════════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+  const inInput = e.target.matches && e.target.matches('input, textarea');
+  const ap = ui.actionPanel;
+
+  if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); ap ? closeActionPanel() : openActionPanel(currentItem(buildItems())); return; }
+  if (mod && e.key.toLowerCase() === 'j') { e.preventDefault(); setTheme(ui.theme === 'dark' ? 'light' : 'dark'); return; }
+
+  if (ap) {
+    const filtered = ap.items.filter(a => matches(ap.filter, a.label));
+    if (e.key === 'Escape') { e.preventDefault(); closeActionPanel(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); ap.index = Math.min(filtered.length - 1, ap.index + 1); renderActionPanel(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); ap.index = Math.max(0, ap.index - 1); renderActionPanel(); return; }
+    if (e.key === 'Enter' && filtered[ap.index]) { e.preventDefault(); const a = filtered[ap.index]; const it = ap.item; closeActionPanel(); runAction(a.id, it); return; }
+    return;
+  }
+
+  if (e.key === '/' && !inInput) { e.preventDefault(); $('search').focus(); return; }
+  if (e.key === 'Escape' && inInput) { e.target.blur(); return; }
+
+  const items = selectable(buildItems());
+  const idx = items.findIndex(i => i.id === ui.selected);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (inInput && e.target.id !== 'search') return;
+    e.preventDefault();
+    const next = items[Math.max(0, Math.min(items.length - 1, idx + (e.key === 'ArrowDown' ? 1 : -1)))];
+    if (next) { ui.selected = next.id; render(); }
+    return;
+  }
+  if (e.key === 'Enter' && (!inInput || e.target.id === 'search')) {
+    const cur = items[idx]; const a = actionsFor(cur)[0];
+    if (a) { e.preventDefault(); runAction(a.id, cur); }
+    return;
+  }
+  if (mod && !inInput) {
+    const cur = items[idx];
+    const hit = actionsFor(cur).find(a => a.keys[0] === 'MOD' && a.keys[a.keys.length - 1].toLowerCase() === e.key.toLowerCase() && (a.keys.includes('⇧') === e.shiftKey));
+    if (hit) { e.preventDefault(); runAction(hit.id, cur); }
+  }
+});
+
+$('search').addEventListener('input', e => { ui.query = e.target.value.trim(); render(); });
+$('theme-btn').addEventListener('click', () => setTheme(ui.theme === 'dark' ? 'light' : 'dark'));
+
+/* Relógios ao vivo + expiração do toast, sem re-render completo. */
+setInterval(() => {
+  document.querySelectorAll('[data-live-clock]').forEach(el => { el.textContent = fmtDur((Date.now() - Number(el.dataset.liveClock)) / 1000); });
+  if (ui.toast && ui.toast.until <= Date.now()) { ui.toast = null; renderFooter(currentItem(buildItems())); }
+}, 1000);
+/* Re-render leve a cada 30s pra atualizar "há X min" e detectar agentes travados. */
+setInterval(render, 30000);
+
+/* ═══════════════════════════════════════════════════════════════════
+   API pública
+   >>> INTEGRAÇÃO <<<
+   ═══════════════════════════════════════════════════════════════════ */
+let renderTimer = null;
+/** Re-render em lote: o SSE pode mandar dezenas de eventos por segundo. */
+function scheduleRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => { renderTimer = null; render(); }, 200);
+}
+const STORE_CAP = 20000;
+function pushLines(arr, lines) { for (const l of lines) arr.push(l); if (arr.length > STORE_CAP) arr.splice(0, arr.length - STORE_CAP); }
+
+/* Ações: operam o ambiente (build, Metro, app, emulador). Nenhuma aprova comando de agente. */
+function post(path, body) {
+  return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Spalla': '1' }, body: JSON.stringify(body || {}) })
+    .then(r => r.json().catch(() => ({})).then(j => ({ ok: r.ok, ...j })), () => ({ ok: false, error: 'Sem conexão com o servidor do Spalla.' }));
+}
+function act(path, body, quiet) {
+  return post(path, body).then(r => { if (!r.ok) showToast('fail', r.error || 'Não deu certo.'); else if (!quiet) showToast('ok', r.message || 'Feito.'); });
+}
+function logOf(item) { return item && (item.kind === 'build' ? state.build.log : item.ref && item.ref.log); }
+function openLog(file) {
+  if (!file) return showToast('fail', 'Este item não tem log.');
+  if (state.build.log === file && state.build.status !== 'idle') ui.selected = 'build:current';
+  else {
+    const hx = state.history.find(x => x.log === file);
+    if (!hx) return showToast('fail', 'Esse log não está no histórico recente.');
+    ui.selected = 'hist:' + hx.id;
+  }
+  render();
+  requestAnimationFrame(() => { const el = document.querySelector('.log'); if (el) el.scrollIntoView({ block: 'nearest' }); });
+}
+function copyFirstError(file) {
+  if (!file) return showToast('fail', 'Este build não tem log.');
+  fetchLog(file).then(lines => {
+    const l = lines.find(x => RE_ERROR.test(x));
+    l ? copy(l.trim(), 'Primeiro erro copiado') : showToast('ok', 'Nenhum erro neste log.');
+  }, () => showToast('fail', 'Não consegui ler o log.'));
+}
+
+const Spalla = window.Spalla = {
+  /** Substitui partes do estado e re-renderiza. Ex.: Spalla.update({ build: {...} }) */
+  update(patch) { state = { ...state, ...patch }; scheduleRender(); },
+
+  /** Insere/atualiza um agente (vindo de `dev agent-event`). */
+  upsertAgent(evt) {
+    // evt: { agent, type, message, at }
+    const at = evt.at || Date.now();
+    let a = state.agents.find(x => x.id === evt.agent);
+    const prevState = a && a.state;
+    if (!a) { a = { id: evt.agent, name: evt.agent, events: [] }; state.agents.push(a); }
+    a.state = evt.type; a.message = evt.message || ''; a.lastEventAt = at;
+    a.events = [{ at, state: evt.type, message: evt.message || '' }, ...(a.events || [])].slice(0, 50);
+    const m = /build-\d{8}-\d{6}\.log/.exec(a.message); a.log = m ? m[0] : a.log;
+    if (prevState !== evt.type) notify(a);
+    scheduleRender();
+  },
+
+  /** Acrescenta linhas ao log do build atual. */
+  appendBuildLines(lines) { pushLines(state.build.lines, lines); scheduleRender(); },
+
+  /** Chamado em toda ação (copy-*, mute, clear-logcat e toggle-theme já foram tratados localmente). */
+  onAction(id, item) {
+    switch (id) {
+      case 'open-log': return openLog(logOf(item));
+      case 'copy-first-error': return copyFirstError(logOf(item));
+      case 'stop-build': return act('/api/actions/stop-build');
+      case 'rebuild': return act('/api/actions/rebuild', { variant: item && item.ref && item.ref.variant });
+      case 'start-metro': case 'stop-metro': case 'open-app': case 'boot-avd': return act('/api/actions/' + id);
+      case 'mark-idle': return act('/api/actions/mark-idle', { agent: item && item.ref && item.ref.id }, true);
+    }
+  }
+};
+
+/* Notificação + som só para o que precisa de você ou falhou, respeitando "silenciar". */
+function notify(a) {
+  if (ui.muted.has(a.id)) return;
+  const important = a.state === 'needs_approval' || a.state === 'waiting_input' || a.state === 'failed';
+  if (!important || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const title = a.state === 'failed' ? `${a.name} falhou` : `${a.name} está esperando você`;
+  const body = a.state === 'needs_approval' ? `${a.message}\nAprove no terminal do agente.` : a.message;
+  try { new Notification(title, { body, tag: 'spalla-' + a.id }); } catch {}
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SSE (/stream) — eventos: init, patch, build-lines, metro-lines, logcat-lines, agent
+   ═══════════════════════════════════════════════════════════════════ */
+function notifyBuild(b) {
+  if (b.status !== 'success' || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification('Build concluído', { body: `${b.variant} · ${fmtDur(buildElapsed(b))}`, tag: 'spalla-build' }); } catch {}
+}
+function setConn(c) { if (state.connection !== c) Spalla.update({ connection: c }); }
+function connect() {
+  const es = new EventSource('/stream');
+  es.onopen = () => setConn('connected');
+  es.onerror = () => setConn(es.readyState === EventSource.CLOSED ? 'offline' : 'reconnecting');
+  es.addEventListener('init', e => Spalla.update({ ...JSON.parse(e.data), connection: 'connected' }));
+  es.addEventListener('patch', e => {
+    const p = JSON.parse(e.data), prev = state.build.status;
+    Spalla.update({
+      build: { ...state.build, ...p.build },          // preserva as linhas
+      history: p.history,
+      device: { ...state.device, ...p.device },
+      metro: { ...state.metro, ...p.metro }           // preserva as linhas
+    });
+    if (prev === 'running' && p.build.status !== 'running') notifyBuild(p.build);
+  });
+  es.addEventListener('build-lines', e => { const d = JSON.parse(e.data); if (d.reset) state.build.lines = []; Spalla.appendBuildLines(d.lines); });
+  es.addEventListener('metro-lines', e => { const d = JSON.parse(e.data); if (d.reset) state.metro.lines = []; pushLines(state.metro.lines, d.lines); scheduleRender(); });
+  es.addEventListener('logcat-lines', e => { const d = JSON.parse(e.data); if (d.reset) state.logcat.lines = []; pushLines(state.logcat.lines, d.lines); scheduleRender(); });
+  es.addEventListener('agent', e => Spalla.upsertAgent(JSON.parse(e.data)));
+}
+// primeira pintura com o estado real; o evento 'init' do SSE (mesmo formato) ressincroniza em seguida
+fetch('/api/state').then(r => r.json()).then(st => Spalla.update({ ...st, connection: state.connection })).catch(() => {});
 connect();
+
+render();
+})();
 </script>
 </body>
 </html>
