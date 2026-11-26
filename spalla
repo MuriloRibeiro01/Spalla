@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Atalho: `spalla <comando>` é o mesmo que `dev <comando>` (ex.: spalla report atlas < resumo.md).
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+exec "$(cd "$(dirname "$SELF")" && pwd)/dev" "$@"

@@ -29,6 +29,7 @@ uso: dev <comando> [args]
                                       waiting_input done failed idle)
   force-stop           mata o app à força (am force-stop)
   tap <x> <y>          toque no device (pixels reais; adb input tap)
+  report <agente> [arquivo.md]   salva um resumo em .md para o Spalla (sem arquivo, lê o stdin)
   status               imprime .devdash/status.json
   stop                 para Metro, logcat e dashboard iniciados em background
   gradle-stop          ./gradlew --stop (encerra os daemons do Gradle)
@@ -283,6 +284,10 @@ cmd_force_stop() {
   "$ADB" shell am force-stop "$PKG"
 }
 
+cmd_report() {
+  node "$LIB/report.js" "$ROOT" "$@"
+}
+
 cmd_gradle_stop() {
   ensure_android_dir
   (cd "$APP_DIR/android" && "$(gradlew_cmd)" --stop)
@@ -292,6 +297,7 @@ case "$CMD" in
   dash) cmd_dash "$@" ;;
   emulator) cmd_emulator ;;
   force-stop) cmd_force_stop ;;
+  report) cmd_report "$@" ;;
   tap) cmd_tap "$@" ;;
   prebuild) cmd_prebuild "$@" ;;
   build) cmd_build "$@" ;;

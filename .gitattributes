@@ -3,3 +3,4 @@
 dev text eol=lf
 *.kts text eol=lf
 *.js text eol=lf
+spalla text eol=lf
