@@ -1,0 +1,4 @@
+node_modules/
+.devdash/
+devdash.config.json
+*.log

@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# Spalla — wrapper de build/run/logcat/emulador com dashboard local.
+# Lê devdash.config.json subindo a partir do diretório atual. Dados em <projeto>/.devdash/.
+set -o pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+DD_HOME="$(cd "$(dirname "$SELF")" && pwd)"
+LIB="$DD_HOME/lib"
+
+case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) IS_WIN=1 ;; *) IS_WIN= ;; esac
+
+die() { echo "dev: $*" >&2; exit 1; }
+log() { echo "[dev] $*"; }
+winpath() { if [ -n "$IS_WIN" ] && command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
+
+usage() {
+  cat <<'EOF'
+uso: dev <comando> [args]
+
+  dash [--bg]          sobe o dashboard (http://localhost:<dashPort>)
+  emulator             status do device; sobe o AVD se não houver nenhum e espera o boot
+  prebuild [--clean]   expo prebuild do Android (--clean só se passado explicitamente)
+  build [variant]      gradle assemble<Variant> (padrão: debug) com progresso e log
+  install [variant]    instala o APK com adb
+  run [variant]        emulador + (instala se faltar) + Metro + adb reverse + abre o app + logcat
+  metro                sobe o Metro em primeiro plano (log em .devdash/logs/metro.log)
+  logcat               logcat filtrado pelo PID do app (.devdash/logs/logcat.log)
+  agent-event <agente> <tipo> [msg]   grava evento de agente (tipos: working tool needs_approval
+                                      waiting_input done failed idle)
+  status               imprime .devdash/status.json
+  stop                 para Metro, logcat e dashboard iniciados em background
+  gradle-stop          ./gradlew --stop (encerra os daemons do Gradle)
+EOF
+}
+
+CMD="${1:-}"
+[ -z "$CMD" ] && { usage; exit 0; }
+case "$CMD" in -h | --help | help) usage; exit 0 ;; esac
+shift
+
+# ---------------------------------------------------------------- projeto
+ROOT="$(node "$LIB/util.js" root "$PWD")" || die "devdash.config.json não encontrado (de $PWD para cima)"
+eval "$(node "$LIB/cfg.js" "$ROOT")" || die "falha ao ler devdash.config.json"
+APP_DIR="$CFG_APPDIR"
+PKG="$CFG_PACKAGE"
+AVD="$CFG_AVD"
+METRO_PORT="$CFG_METRO_PORT"
+DASH_PORT="$CFG_DASH_PORT"
+DATA="$ROOT/.devdash"
+mkdir -p "$DATA/logs" "$DATA/agents" "$DATA/pids"
+
+# ---------------------------------------------------------------- android sdk
+find_sdk_tool() { # nome relpath
+  local name="$1" rel="$2" c
+  c="$(command -v "$name" 2>/dev/null)" && { echo "$c"; return; }
+  for base in "$ANDROID_HOME" "$ANDROID_SDK_ROOT" "$HOME/AppData/Local/Android/Sdk" "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+    [ -n "$base" ] || continue
+    for ext in "" ".exe"; do
+      [ -x "$(cygpath -u "$base" 2>/dev/null || echo "$base")/$rel$ext" ] && { echo "$(cygpath -u "$base" 2>/dev/null || echo "$base")/$rel$ext"; return; }
+    done
+  done
+}
+ADB="$(find_sdk_tool adb platform-tools/adb)"
+EMULATOR="$(find_sdk_tool emulator emulator/emulator)"
+export ADB
+
+status() { node "$LIB/status.js" "$DATA" "$@"; }
+emit() { node "$LIB/event.js" "$ROOT" "$@"; }
+need_adb() { [ -n "$ADB" ] || die "adb não encontrado (defina ANDROID_HOME)"; }
+
+# ---------------------------------------------------------------- emulador
+emu_online() { "$ADB" devices 2>/dev/null | tr -d '\r' | awk 'NR>1 && $2=="device"{f=1} END{exit !f}'; }
+boot_done() { [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
+
+ensure_device() {
+  need_adb
+  if emu_online && boot_done; then return 0; fi
+  if ! emu_online; then
+    [ -n "$AVD" ] || die "nenhum device e 'avd' não definido no config"
+    [ -n "$EMULATOR" ] || die "emulator não encontrado (defina ANDROID_HOME)"
+    log "subindo AVD $AVD"
+    status phase=emulator
+    nohup "$EMULATOR" -avd "$AVD" -no-snapshot-save >"$DATA/logs/emulator.out" 2>&1 &
+  fi
+  local i
+  for i in $(seq 1 90); do
+    emu_online && boot_done && { log "device pronto"; return 0; }
+    sleep 2
+  done
+  die "timeout esperando o boot do emulador"
+}
+
+cmd_emulator() {
+  ensure_device || exit 1
+  "$ADB" devices | tr -d '\r'
+  local bc
+  bc="$("$ADB" shell getprop sys.boot_completed | tr -d '\r')"
+  log "boot_completed=$bc"
+  if [ -n "$PKG" ]; then
+    if "$ADB" shell pm path "$PKG" 2>/dev/null | grep -q package; then log "app instalado: $PKG"; else log "app NÃO instalado: $PKG"; fi
+    log "pid do app: $("$ADB" shell pidof -s "$PKG" 2>/dev/null | tr -d '\r')"
+  fi
+}
+
+# ---------------------------------------------------------------- build
+ensure_android_dir() {
+  if [ ! -d "$APP_DIR/android" ]; then
+    log "android/ não existe: expo prebuild (sem --clean)"
+    status phase=prebuild
+    (cd "$APP_DIR" && npx expo prebuild --platform android) || die "expo prebuild falhou"
+  fi
+}
+
+gradlew_cmd() { if [ -n "$IS_WIN" ]; then echo "./gradlew.bat"; else echo "./gradlew"; fi; }
+cap() { local s="$1"; echo "$(echo "${s:0:1}" | tr '[:lower:]' '[:upper:]')${s:1}"; }
+
+cmd_build() {
+  local variant="${1:-debug}" Variant ts logf events rc result
+  Variant="$(cap "$variant")"
+  ensure_android_dir
+  ts="$(date +%Y%m%d-%H%M%S)"
+  logf="$DATA/logs/build-$ts.log"
+  events="$DATA/events.jsonl"
+  : >"$events"
+  status phase=building result=running id="$ts" variant="$variant" startedAt=now finishedAt=null durationMs=null exitCode=null \
+    logFile="$(basename "$logf")" task=null
+  log "build $variant — acompanhe em http://localhost:$DASH_PORT (log: $logf)"
+  (cd "$APP_DIR/android" && "$(gradlew_cmd)" --console=plain \
+    -I "$(winpath "$DD_HOME/gradle/progress.init.gradle.kts")" \
+    "-PdevdashEvents=$(winpath "$events")" "app:assemble$Variant") 2>&1 | tee "$logf"
+  rc=${PIPESTATUS[0]}
+  if [ "$rc" -eq 0 ]; then result=SUCCESS; else result=FAILED; fi
+  status --finish phase=idle result="$result" exitCode="$rc"
+  if [ "$rc" -eq 0 ]; then emit dev done "build $variant concluído"; else emit dev failed "build $variant falhou (exit $rc) — veja $(basename "$logf")"; fi
+  log "build $result (exit $rc)"
+  return "$rc"
+}
+
+apk_path() { echo "$APP_DIR/android/app/build/outputs/apk/$1/app-$1.apk"; }
+
+cmd_install() {
+  local variant="${1:-debug}" apk
+  apk="$(apk_path "$variant")"
+  [ -f "$apk" ] || die "APK não encontrado: $apk (rode: dev build $variant)"
+  ensure_device || exit 1
+  status phase=installing
+  log "instalando $apk"
+  "$ADB" install -r "$(winpath "$apk")"
+  local rc=$?
+  status phase=idle installResult="$([ $rc -eq 0 ] && echo OK || echo FAILED)"
+  return $rc
+}
+
+# ---------------------------------------------------------------- metro / logcat
+metro_up() { curl -s --max-time 2 "http://127.0.0.1:$METRO_PORT/status" 2>/dev/null | grep -q "packager-status:running"; }
+
+cmd_metro() {
+  [ -d "$APP_DIR" ] || die "appDir inválido: $APP_DIR"
+  cd "$APP_DIR" || exit 1
+  export FORCE_COLOR=0 NO_COLOR=1
+  npx expo start --dev-client --port "$METRO_PORT" </dev/null 2>&1 | tee -a "$DATA/logs/metro.log"
+}
+
+bg_self() { # nome args...   (reinvoca este script em background, com pidfile)
+  local name="$1"; shift
+  (cd "$ROOT" && nohup "$SELF" "$@" >"$DATA/logs/$name.out" 2>&1 & echo $! >"$DATA/pids/$name.pid")
+}
+
+cmd_logcat() {
+  [ -n "$PKG" ] || die "package não definido no config"
+  ensure_device || exit 1
+  : >"$DATA/logs/logcat.log"
+  local pid line
+  while true; do
+    pid="$("$ADB" shell pidof -s "$PKG" 2>/dev/null | tr -d '\r')"
+    if [ -z "$pid" ]; then sleep 1; continue; fi
+    echo "--- $PKG pid $pid ---" >>"$DATA/logs/logcat.log"
+    "$ADB" logcat --pid="$pid" -v threadtime 2>&1 | while IFS= read -r line; do
+      line="${line%$'\r'}"
+      printf '%s\n' "$line" >>"$DATA/logs/logcat.log"
+      case "$line" in *"FATAL EXCEPTION"*) emit dev failed "FATAL EXCEPTION no app $PKG (pid $pid)" ;; esac
+    done
+    echo "--- $PKG pid $pid encerrou ---" >>"$DATA/logs/logcat.log"
+    sleep 1
+  done
+}
+
+# ---------------------------------------------------------------- run
+cmd_run() {
+  local variant="${1:-debug}" i
+  [ -n "$PKG" ] || die "package não definido no config"
+  ensure_device || exit 1
+  if ! "$ADB" shell pm path "$PKG" 2>/dev/null | grep -q package; then
+    cmd_install "$variant" || die "instalação falhou"
+  fi
+  if ! metro_up; then
+    log "subindo Metro na porta $METRO_PORT"
+    status phase=metro
+    bg_self metro metro
+    for i in $(seq 1 60); do metro_up && break; sleep 2; done
+    metro_up || die "Metro não subiu (veja .devdash/logs/metro.log)"
+  fi
+  "$ADB" reverse "tcp:$METRO_PORT" "tcp:$METRO_PORT" >/dev/null || die "adb reverse falhou"
+  log "adb reverse tcp:$METRO_PORT ok"
+  [ -f "$DATA/pids/logcat.pid" ] && kill -0 "$(cat "$DATA/pids/logcat.pid")" 2>/dev/null || bg_self logcat logcat
+  status phase=launching
+  if [ -n "$CFG_SCHEME" ]; then
+    "$ADB" shell am start -a android.intent.action.VIEW \
+      -d "${CFG_SCHEME}://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A${METRO_PORT}" >/dev/null || die "falha ao abrir o app"
+  else
+    "$ADB" shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null || die "falha ao abrir o app"
+  fi
+  status phase=running
+  log "app aberto — dashboard: http://localhost:$DASH_PORT"
+}
+
+# ---------------------------------------------------------------- dash / stop
+cmd_dash() {
+  local bg=""
+  [ "${1:-}" = "--bg" ] && bg=1
+  if [ -n "$bg" ]; then
+    (cd "$ROOT" && nohup node "$DD_HOME/server/server.js" --root "$ROOT" >"$DATA/logs/dash.out" 2>&1 & echo $! >"$DATA/pids/dash.pid")
+    log "dashboard em http://localhost:$DASH_PORT"
+  else
+    exec node "$DD_HOME/server/server.js" --root "$ROOT"
+  fi
+}
+
+kill_pidfile() {
+  local f="$DATA/pids/$1.pid"
+  [ -f "$f" ] || return 0
+  kill "$(cat "$f")" 2>/dev/null
+  rm -f "$f"
+}
+
+cmd_stop() {
+  kill_pidfile logcat
+  kill_pidfile dash
+  kill_pidfile metro
+  node "$LIB/killport.js" "$METRO_PORT"
+  status phase=idle
+}
+
+cmd_prebuild() {
+  local flag=""
+  [ "${1:-}" = "--clean" ] && flag="--clean"
+  status phase=prebuild
+  log "expo prebuild --platform android ${flag}"
+  (cd "$APP_DIR" && npx expo prebuild --platform android $flag) 2>&1 | tee "$DATA/logs/prebuild.log"
+  local rc=${PIPESTATUS[0]}
+  status phase=idle
+  return $rc
+}
+
+cmd_gradle_stop() {
+  ensure_android_dir
+  (cd "$APP_DIR/android" && "$(gradlew_cmd)" --stop)
+}
+
+case "$CMD" in
+  dash) cmd_dash "$@" ;;
+  emulator) cmd_emulator ;;
+  prebuild) cmd_prebuild "$@" ;;
+  build) cmd_build "$@" ;;
+  install) cmd_install "$@" ;;
+  run) cmd_run "$@" ;;
+  metro) cmd_metro ;;
+  logcat) cmd_logcat ;;
+  agent-event) emit "$@" ;;
+  status) cat "$DATA/status.json" 2>/dev/null || echo "{}" ;;
+  stop) cmd_stop ;;
+  gradle-stop) cmd_gradle_stop ;;
+  *) usage; exit 2 ;;
+esac
