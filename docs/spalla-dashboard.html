@@ -18,7 +18,9 @@
   • Todo comando tem atalho visível ao lado dele.
   • O Spalla só avisa, nunca aprova: nenhuma ação de aprovar existe aqui.
   • Vazio sempre explica o motivo.
-  • Texto de log entra via textContent (nunca innerHTML).
+  • Texto de log e markdown de agente entram via textContent (nunca innerHTML).
+  • "Resumo do Maestro": o agente gerenciador (Atlas) escreve .md, o Spalla
+    renderiza. O progresso sai dos checkboxes (- [ ] / - [x]) do próprio .md.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -164,6 +166,46 @@ kbd { min-width: 22px; height: 22px; padding: 0 6px; display: inline-flex; align
 .ap-filter { display: flex; padding: 10px 14px; border-top: 1px solid var(--line); }
 .ap-filter input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; }
 
+/* ── Resumo do Maestro (markdown do agente gerenciador) ────────────── */
+.report-head { display: flex; flex-direction: column; gap: 12px; }
+.report-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 13px; color: var(--text-3); }
+.report-meta .file { font: 12px var(--font-mono); }
+.pager { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.pager button { height: 28px; min-width: 28px; padding: 0 8px; border-radius: var(--r-row); border: 1px solid var(--line-2); background: var(--panel); cursor: pointer; font-size: 13px; color: var(--text-2); }
+.pager button:disabled { opacity: .4; cursor: default; }
+.pager span { font: 12px var(--font-mono); color: var(--text-3); padding: 0 6px; }
+.report-progress { display: flex; flex-direction: column; gap: 8px; }
+.report-progress .row-text { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--text-2); }
+.report-progress .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; background: transparent; }
+.stale { font-size: 13px; color: var(--text-2); }
+.segmented { align-self: flex-start; display: inline-flex; height: 32px; padding: 2px; border-radius: var(--r-row); background: var(--panel); border: 1px solid var(--line); }
+.segmented button { border: 0; border-radius: var(--r-key); background: transparent; padding: 0 12px; font-size: 13px; color: var(--text-3); cursor: pointer; }
+.segmented button[aria-pressed="true"] { background: var(--sel); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+.md-source { margin: 0; padding: 14px 16px; border-radius: var(--r-block); border: 1px solid var(--line); background: var(--panel); font: 12.5px/1.7 var(--font-mono); color: var(--text-2); white-space: pre-wrap; word-break: break-word; max-width: 820px; }
+
+.md { max-width: 760px; font-size: 15px; line-height: 1.65; color: var(--text); }
+.md > :first-child { margin-top: 0; }
+.md h2 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin: 32px 0 10px; }
+.md h3 { font-size: 17px; font-weight: 600; margin: 28px 0 8px; }
+.md h4, .md h5 { font-size: 15px; font-weight: 600; margin: 20px 0 6px; }
+.md p { margin: 0 0 12px; }
+.md strong { font-weight: 600; }
+.md a { color: var(--run); text-underline-offset: 2px; }
+.md ul, .md ol { margin: 0 0 14px; padding-left: 22px; }
+.md li { margin: 4px 0; }
+.md li > ul, .md li > ol { margin: 4px 0 0; }
+.md li.task { list-style: none; margin-left: -22px; display: flex; gap: 10px; align-items: baseline; }
+.md li.task input { margin: 0; transform: translateY(2px); accent-color: var(--ok); }
+.md li.task.done > span { color: var(--text-3); }
+.md code { font: .88em var(--font-mono); padding: 1px 5px; border-radius: var(--r-key); background: var(--sel); border: 1px solid var(--line); }
+.md pre { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--r-block); background: var(--panel); border: 1px solid var(--line); overflow: auto; }
+.md pre code { padding: 0; border: 0; background: none; font-size: 12.5px; line-height: 1.7; }
+.md blockquote { margin: 0 0 14px; padding: 2px 0 2px 14px; border-left: 2px solid var(--line-2); color: var(--text-2); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+.md table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+.md th { text-align: left; font-size: 12px; font-weight: 500; color: var(--text-3); padding: 0 12px 8px 0; }
+.md td { padding: 9px 12px 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
+
 /* ── Toast (vive na barra, como no Raycast) ─────────────────────────── */
 .footer .toast { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
 
@@ -272,13 +314,82 @@ const MOCK = {
     { id: '110615', startedAt: '25/11 11:06:15', durationSec: 157, result: 'failed', exit: 1, log: 'build-20261125-110615.log', variant: 'debug', agent: 'dev' },
     { id: '110220', startedAt: '25/11 11:02:20', durationSec: 206, result: 'failed', exit: 1, log: 'build-20261125-110220.log', variant: 'debug', agent: 'dev' }
   ],
+  // Resumos do agente gerenciador, mais novo primeiro. O texto é markdown cru,
+  // exatamente como o agente escreveu (ver instruções pro Atlas no fim do arquivo).
+  // EXEMPLO: o conteúdo abaixo é ilustrativo.
+  reports: [
+    { id: '20261126-1410', agent: 'Atlas', at: now - 6 * MIN, file: '.spalla/reports/atlas/20261126-1410.md', markdown: [
+      '# 1more: situação geral',
+      '',
+      '**Resumo:** o build debug do Android continua quebrado e isso trava a validação das demandas de mobile. A sincronização offline segue andando em paralelo.',
+      '',
+      '## Demandas',
+      '',
+      '| Demanda | Agente | Status |',
+      '|---|---|---|',
+      '| Corrigir build debug do Android | dev | bloqueado |',
+      '| Sincronização offline dos treinos | dev | em andamento |',
+      '| Tela de histórico de treinos | dev | esperando o build |',
+      '',
+      '## Build debug',
+      '',
+      '- [x] Reproduzir a falha localmente com `spalla build`',
+      '- [x] Separar o ruído: os avisos de deprecação do CMake não são a causa',
+      '- [ ] Achar a primeira linha de erro real em `build-20261125-213549.log`',
+      '- [ ] Corrigir e rodar um build limpo até `exit 0`',
+      '',
+      '## Sincronização offline',
+      '',
+      '- [x] Fila local de treinos pendentes',
+      '- [x] Reenvio automático quando a conexão volta',
+      '- [ ] Conflito quando o mesmo treino é editado em dois aparelhos',
+      '- [ ] Testes de integração com a API Spring Boot',
+      '',
+      '## Bloqueios',
+      '',
+      '> Cinco builds debug falharam desde 11:02, todos com `exit 1`. Enquanto isso não sair, nada de mobile pode ser validado no emulador.',
+      '',
+      '## Decisões que precisam de você',
+      '',
+      '1. Conflito de sincronização: vale a **última edição** ou o app pergunta pro usuário?',
+      '2. Posso pausar a tela de histórico até o build voltar?',
+      '',
+      'Responda no meu terminal.',
+      '',
+      '## Próximos passos',
+      '',
+      '- dev: isolar o erro real do build debug.',
+      '- Atlas: revisar a fila offline e propor a regra de conflito.'
+    ].join('\n') },
+    { id: '20261126-1105', agent: 'Atlas', at: now - 191 * MIN, file: '.spalla/reports/atlas/20261126-1105.md', markdown: [
+      '# 1more: situação geral',
+      '',
+      '**Resumo:** começo do dia. O build debug falhou de novo ontem à noite; dev vai investigar primeiro.',
+      '',
+      '## Build debug',
+      '',
+      '- [x] Reproduzir a falha localmente com `spalla build`',
+      '- [ ] Separar o ruído dos avisos do CMake',
+      '- [ ] Achar a primeira linha de erro real',
+      '- [ ] Corrigir e rodar um build limpo até `exit 0`',
+      '',
+      '## Sincronização offline',
+      '',
+      '- [x] Fila local de treinos pendentes',
+      '- [ ] Reenvio automático quando a conexão volta',
+      '- [ ] Conflito entre aparelhos',
+      '- [ ] Testes de integração'
+    ].join('\n') }
+  ],
   device: { adb: true, serial: 'emulator-5554', booted: true, installed: true, running: false, wrapperPhase: 'building' },
   metro: { running: false, port: 8081, lines: [] },
   logcat: { lines: [] }
 };
 
 const ui = {
-  selected: 'build:current',
+  selected: 'report',
+  reportIndex: 0,                 // 0 = mais recente
+  reportView: 'rendered',         // 'rendered' | 'source'
   theme: readPref('spalla.theme') || 'dark',
   query: '',
   onlyErrors: false,
@@ -333,8 +444,141 @@ const GLYPHS = {
   diamond: () => svg('<path d="M8 3 L13 8 L8 13 L3 8 Z" fill="currentColor"/>'),
   dotted:  () => svg('<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="1.5 3" stroke-linecap="round"/>'),
   check:   () => svg('<path d="M3 8.5 L6.5 12 L13 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'),
-  dash:    () => svg('<path d="M3 8 H13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>')
+  dash:    () => svg('<path d="M3 8 H13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
+  doc:     () => svg('<path d="M4 2.5 H9.5 L12 5 V13.5 H4 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 8 H10 M6 10.5 H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')
 };
+
+/* ═══════════════════════════════════════════════════════════════════
+   Markdown → DOM, sem dependências e sem innerHTML.
+   O texto vem de um agente: tudo vira textContent; HTML cru aparece como texto.
+   Suporta: # títulos, parágrafos, **negrito**, *itálico*, ~~riscado~~,
+   `código`, ```blocos```, listas (aninhadas por indentação), - [ ] tarefas,
+   > citações, tabelas GFM, --- e [links](https://…).
+   ═══════════════════════════════════════════════════════════════════ */
+const MD = {
+  heading: /^(#{1,6})\s+(.*?)\s*#*\s*$/,
+  fence: /^\s*(```|~~~)\s*([\w-]*)\s*$/,
+  hr: /^\s*([-*_])(\s*\1){2,}\s*$/,
+  quote: /^\s*>\s?/,
+  list: /^(\s*)([-*+]|\d+[.)])\s+(.*)$/,
+  tableSep: /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/,
+  task: /^\[( |x|X)\]\s+(.*)$/
+};
+function isBlockStart(line, next) {
+  return MD.heading.test(line) || MD.fence.test(line) || MD.hr.test(line) || MD.quote.test(line) ||
+         MD.list.test(line) || (line.includes('|') && next != null && MD.tableSep.test(next));
+}
+function renderInline(text) {
+  const frag = document.createDocumentFragment();
+  const re = /(`+)([\s\S]*?[^`])\1(?!`)|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|~~([\s\S]+?)~~|\*([^*\s](?:[^*]*?[^*\s])?)\*|(?<![\w])_([^_\s](?:[^_]*?[^_\s])?)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    if (m[1]) frag.append(h('code', null, m[2].trim()));
+    else if (m[3] || m[4]) { const s = h('strong'); s.append(renderInline(m[3] || m[4])); frag.append(s); }
+    else if (m[5]) { const s = h('del'); s.append(renderInline(m[5])); frag.append(s); }
+    else if (m[6] || m[7]) { const s = h('em'); s.append(renderInline(m[6] || m[7])); frag.append(s); }
+    else if (m[8]) {
+      const href = m[9];
+      if (/^(https?:\/\/|\.{0,2}\/|#)/i.test(href)) { const a = h('a', { href, target: '_blank', rel: 'noopener noreferrer' }); a.append(renderInline(m[8])); frag.append(a); }
+      else frag.append(m[0]);          // esquema desconhecido (javascript:, data:…) vira texto
+    }
+    last = re.lastIndex;
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
+}
+function splitRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+}
+function renderMarkdown(src) {
+  const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
+  const root = h('div.md');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) { i++; continue; }
+
+    let m = MD.fence.exec(line);
+    if (m) {
+      const fence = m[1], body = [];
+      i++;
+      while (i < lines.length && !new RegExp('^\\s*' + fence.replace(/[~`]/g, '\\$&') + '\\s*$').test(lines[i])) body.push(lines[i++]);
+      i++;
+      root.append(h('pre', null, h('code', m[2] ? { 'data-lang': m[2] } : null, body.join('\n'))));
+      continue;
+    }
+    if ((m = MD.heading.exec(line))) {
+      const level = Math.min(5, m[1].length + 1);          // # vira h2: o h1 da página é o título da área
+      const el = h('h' + level); el.append(renderInline(m[2])); root.append(el); i++; continue;
+    }
+    if (MD.hr.test(line)) { root.append(h('hr')); i++; continue; }
+    if (MD.quote.test(line)) {
+      const body = [];
+      while (i < lines.length && lines[i].trim() && MD.quote.test(lines[i])) body.push(lines[i++].replace(MD.quote, ''));
+      const q = h('blockquote'); q.append(...renderMarkdown(body.join('\n')).childNodes); root.append(q); continue;
+    }
+    if (line.includes('|') && MD.tableSep.test(lines[i + 1] || '')) {
+      const head = splitRow(line); i += 2;
+      const table = h('table'), thead = h('thead'), tbody = h('tbody'), tr = h('tr');
+      head.forEach(c => { const th = h('th', { scope: 'col' }); th.append(renderInline(c)); tr.append(th); });
+      thead.append(tr);
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
+        const row = h('tr');
+        splitRow(lines[i++]).forEach(c => { const td = h('td'); td.append(renderInline(c)); row.append(td); });
+        tbody.append(row);
+      }
+      table.append(thead, tbody); root.append(table); continue;
+    }
+    if (MD.list.test(line)) {
+      // Lista com aninhamento por indentação.
+      const stack = [];  // { indent, el }
+      while (i < lines.length && (MD.list.test(lines[i]) || (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && stack.length))) {
+        const lm = MD.list.exec(lines[i]);
+        if (!lm) {                                   // linha de continuação
+          const li = stack[stack.length - 1].el.lastElementChild;
+          if (li) { const tgt = li.querySelector(':scope > span') || li; tgt.append(' ', renderInline(lines[i].trim())); }
+          i++; continue;
+        }
+        const indent = lm[1].replace(/\t/g, '    ').length;
+        const ordered = /\d/.test(lm[2]);
+        while (stack.length && indent < stack[stack.length - 1].indent) stack.pop();
+        let top = stack[stack.length - 1];
+        if (top && indent === top.indent && top.ordered !== ordered) { stack.pop(); top = stack[stack.length - 1]; }  // trocou de - pra 1.
+        if (!top || indent > top.indent) {
+          const listEl = h(ordered ? 'ol' : 'ul');
+          if (top && top.el.lastElementChild) top.el.lastElementChild.append(listEl); else root.append(listEl);
+          stack.push(top = { indent, ordered, el: listEl });
+        }
+        const tm = MD.task.exec(lm[3]);
+        let li;
+        if (tm) {
+          const done = tm[1].toLowerCase() === 'x';
+          const text = h('span'); text.append(renderInline(tm[2]));
+          li = h('li.task' + (done ? '.done' : ''), null, h('input', { type: 'checkbox', checked: done, disabled: true, 'aria-label': done ? 'concluído' : 'pendente' }), text);
+        } else { li = h('li'); li.append(renderInline(lm[3])); }
+        top.el.append(li);
+        i++;
+      }
+      continue;
+    }
+    // Parágrafo: junta linhas até uma linha em branco ou o começo de outro bloco.
+    const para = [];
+    while (i < lines.length && lines[i].trim() && (para.length === 0 || !isBlockStart(lines[i], lines[i + 1]))) para.push(lines[i++].trim());
+    const p = h('p'); p.append(renderInline(para.join(' '))); root.append(p);
+  }
+  return root;
+}
+function reportProgress(md) {
+  const re = /^\s*[-*+]\s+\[( |x|X)\]\s+/gm;
+  let m, done = 0, total = 0;
+  while ((m = re.exec(md || ''))) { total++; if (m[1] !== ' ') done++; }
+  return { done, total };
+}
+function firstLine(md) {
+  const l = String(md || '').split('\n').find(x => x.trim() && !/^#/.test(x)) || '';
+  return l.replace(/[*_`>#]/g, '').trim();
+}
 function keys(...ks) { return h('span.keys', null, ks.map(k => h('kbd', null, k === 'MOD' ? MOD : k))); }
 function fmtDur(sec) {
   sec = Math.max(0, Math.round(sec));
@@ -385,6 +629,18 @@ function buildItems() {
     muted: ui.muted.has(a.id)
   });
   if (attn.length) items.push({ header: 'Precisa de você' }, ...attn.map(agentItem));
+
+  // Maestro: o resumo do agente gerenciador fica logo abaixo do que precisa de você.
+  const rep = state.reports && state.reports[0];
+  if (rep) {
+    const p = reportProgress(rep.markdown);
+    items.push({ header: 'Maestro' }, {
+      id: 'report', kind: 'report', ref: rep, glyph: 'doc', color: 'var(--text-2)',
+      name: `Resumo do ${rep.agent}`, sub: p.total ? `${p.done} de ${p.total} itens concluídos` : firstLine(rep.markdown),
+      acc: fmtAgo(rep.at), search: rep.markdown
+    });
+  }
+
   if (rest.length) items.push({ header: 'Agentes' }, ...rest.map(agentItem));
 
   const b = state.build;
@@ -415,7 +671,7 @@ function buildItems() {
   const out = []; let header = null;
   for (const it of items) {
     if (it.header) { header = it; continue; }
-    if (matches(q, it.name, it.sub, it.ref && it.ref.task, it.ref && it.ref.log)) {
+    if (matches(q, it.name, it.sub, it.search, it.ref && it.ref.task, it.ref && it.ref.log)) {
       if (header) { out.push(header); header = null; }
       out.push(it);
     }
@@ -499,6 +755,13 @@ function actionsFor(item) {
   if (!item) return [];
   const A = (id, label, k, sep) => ({ id, label, keys: k, sep });
   switch (item.kind) {
+    case 'report': return [
+      A('copy-md', 'Copiar markdown', ['↵']),
+      A('toggle-source', ui.reportView === 'source' ? 'Ver como leitura' : 'Ver fonte .md', ['MOD', 'U']),
+      A('prev-report', 'Resumo anterior', ['[']),
+      A('next-report', 'Resumo seguinte', [']']),
+      A('copy-ask', 'Copiar pedido de resumo novo', ['MOD', '⇧', 'R'], true),
+      A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
     case 'build': return [A('open-log', 'Abrir log do build', ['↵']), A('copy-task', 'Copiar task atual', ['MOD', 'C']), A('stop-build', 'Parar build', ['MOD', '.']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
     case 'history': return [A('open-log', 'Abrir log', ['↵']), A('copy-first-error', 'Copiar primeiro erro', ['MOD', '⇧', 'C']), A('rebuild', 'Rodar build de novo', ['MOD', 'R']), A('toggle-theme', 'Alternar tema', ['MOD', 'J'], true)];
     case 'agent': {
@@ -521,6 +784,16 @@ function actionsFor(item) {
 
 function runAction(id, item) {
   if (id === 'toggle-theme') return setTheme(ui.theme === 'dark' ? 'light' : 'dark');
+  if (item && item.kind === 'report') {
+    const reps = state.reports || [];
+    const r = reps[ui.reportIndex] || reps[0];
+    if (id === 'copy-md') return copy(r.markdown, 'Markdown copiado');
+    if (id === 'toggle-source') { ui.reportView = ui.reportView === 'source' ? 'rendered' : 'source'; return render(); }
+    if (id === 'prev-report') { ui.reportIndex = Math.min(reps.length - 1, ui.reportIndex + 1); return render(); }
+    if (id === 'next-report') { ui.reportIndex = Math.max(0, ui.reportIndex - 1); return render(); }
+    // O Spalla não fala com agentes: ele copia o pedido pra você colar no terminal do Atlas.
+    if (id === 'copy-ask') return copy(REPORT_REQUEST, 'Pedido copiado. Cole no terminal do Atlas.');
+  }
   if (id === 'mute' && item && item.kind === 'agent') {
     ui.muted.has(item.ref.id) ? ui.muted.delete(item.ref.id) : ui.muted.add(item.ref.id);
     writePref('spalla.muted', [...ui.muted]);
@@ -547,6 +820,8 @@ function showToast(kind, text, ms = 3000) { ui.toast = { kind, text, until: Date
    Render
    ═══════════════════════════════════════════════════════════════════ */
 const $ = id => document.getElementById(id);
+/** replaceChildren que ignora null/false (replaceChildren puro escreveria "null" na tela). */
+const put = (el, ...kids) => el.replaceChildren(...kids.flat().filter(k => k != null && k !== false));
 
 function currentItem(items) {
   const sel = selectable(items);
@@ -606,13 +881,51 @@ function emptyState(title, body, action, ks) {
 
 function renderDetail(cur) {
   const d = $('detail');
-  if (!cur) { d.replaceChildren(emptyState('Nada selecionado', 'Use ↑ ↓ pra escolher um item da lista.')); return; }
+  if (!cur) { put(d, emptyState('Nada selecionado', 'Use ↑ ↓ pra escolher um item da lista.')); return; }
+
+  if (cur.kind === 'report') {
+    const reps = state.reports || [];
+    ui.reportIndex = Math.min(ui.reportIndex, reps.length - 1);
+    const r = reps[ui.reportIndex];
+    const p = reportProgress(r.markdown);
+    const isLatest = ui.reportIndex === 0;
+    // Quantos eventos de agentes chegaram depois deste resumo: ajuda a saber se ele ainda vale.
+    const newer = state.agents.reduce((n, a) => n + (a.events || []).filter(e => e.at > r.at).length, 0);
+    const prev = reps[ui.reportIndex + 1];
+    const prevP = prev ? reportProgress(prev.markdown) : null;
+    const delta = prevP && isLatest ? p.done - prevP.done : 0;
+
+    put(d, 
+      h('div.report-head', null,
+        h('div.title-row', null,
+          h('h1', null, `Resumo do ${r.agent}`),
+          h('span.status', { style: 'color: var(--text-3)' }, isLatest ? `atualizado há ${fmtAgo(r.at)}` : `versão de ${fmtClock(r.at).slice(0, 5)}`)),
+        h('div.report-meta', null,
+          h('span.file', null, r.file),
+          h('div.pager', { role: 'group', 'aria-label': 'Resumos anteriores' },
+            h('button', { type: 'button', disabled: ui.reportIndex >= reps.length - 1, 'aria-label': 'Resumo anterior', title: 'Resumo anterior ([)', onclick: () => { ui.reportIndex++; render(); } }, '‹'),
+            h('span', null, `${reps.length - ui.reportIndex} de ${reps.length}`),
+            h('button', { type: 'button', disabled: isLatest, 'aria-label': 'Resumo seguinte', title: 'Resumo seguinte (])', onclick: () => { ui.reportIndex--; render(); } }, '›')))),
+      p.total ? h('div.report-progress', null,
+        h('div.row-text', null,
+          h('span', null, `${p.done} de ${p.total} itens concluídos`),
+          h('span', { style: 'color: var(--text-3)' }, delta > 0 ? `+${delta} desde o resumo anterior` : isLatest ? '' : '')),
+        h('div.bar', { role: 'img', 'aria-label': `${p.done} de ${p.total} itens concluídos` },
+          h('div', { style: `flex:${p.done};background:var(--ok)` }),
+          h('div', { style: `flex:${p.total - p.done};background:var(--p-rest)` }))) : null,
+      newer && isLatest ? h('p.stale', null, `${newer} ${newer === 1 ? 'evento de agente chegou' : 'eventos de agentes chegaram'} depois deste resumo. Ele pode estar desatualizado.`) : null,
+      h('div.segmented', { role: 'group', 'aria-label': 'Modo de leitura' },
+        h('button', { type: 'button', 'aria-pressed': String(ui.reportView === 'rendered'), onclick: () => { ui.reportView = 'rendered'; render(); } }, 'Leitura'),
+        h('button', { type: 'button', 'aria-pressed': String(ui.reportView === 'source'), onclick: () => { ui.reportView = 'source'; render(); } }, 'Fonte .md')),
+      ui.reportView === 'source' ? h('pre.md-source', null, r.markdown) : h('article', { 'aria-label': `Resumo do ${r.agent}` }, renderMarkdown(r.markdown)));
+    return;
+  }
 
   if (cur.kind === 'build') {
     const b = cur.ref, c = b.counts, done = c.executed + c.upToDate + c.fromCache + c.skipped;
     const avg = state.history.length ? state.history.reduce((s, x) => s + x.durationSec, 0) / state.history.length : null;
     const rest = b.totalKnown && b.total ? Math.max(0, b.total - done) : Math.max(1, Math.round(done * 0.03));
-    d.replaceChildren(
+    put(d, 
       h('div.title-row', null, h('h1', null, `Build ${b.variant}`),
         b.status === 'running' ? statusChip('var(--run)', 'dot', 'rodando') : b.status === 'failed' ? statusChip('var(--fail)', 'x', 'falhou') : statusChip('var(--ok)', 'check', 'concluído'),
         h('span.clock', { 'data-live-clock': b.startedAt }, fmtDur((Date.now() - b.startedAt) / 1000))),
@@ -634,7 +947,7 @@ function renderDetail(cur) {
   if (cur.kind === 'history') {
     const x = cur.ref;
     const streak = (() => { let n = 0; for (const s of state.history) { if (s.result === 'failed') n++; else break; } return n; })();
-    d.replaceChildren(
+    put(d, 
       h('div.title-row', null, h('h1', null, `Build ${x.variant} · ${x.startedAt.split(' ').pop().slice(0, 5)}`),
         x.result === 'failed' ? statusChip('var(--fail)', 'x', `falhou · exit ${x.exit}`) : statusChip('var(--ok)', 'check', 'concluído')),
       metrics([['Início', x.startedAt], ['Duração', fmtDur(x.durationSec)], ['Agente', x.agent || '—'], ['Log', x.log]]),
@@ -652,7 +965,7 @@ function renderDetail(cur) {
       : v.attn
         ? h('p.prose', null, a.state === 'needs_approval' ? `${a.name} está esperando aprovação. Aprove no terminal dele, onde dá pra ver o comando completo.` : `${a.name} está esperando sua resposta no terminal dele.`)
         : a.message ? h('p.prose', null, a.message) : null;
-    d.replaceChildren(
+    put(d, 
       h('div.title-row', null, h('h1', null, a.name), statusChip(v.color, v.glyph, v.stuck ? `${a.state}, sem eventos há ${fmtAgo(a.lastEventAt)}` : v.label)),
       body,
       a.events && a.events.length
@@ -663,9 +976,9 @@ function renderDetail(cur) {
 
   if (cur.kind === 'emulator') {
     const x = state.device;
-    if (!x.adb) return d.replaceChildren(emptyState('adb não encontrado', 'O Spalla não achou o adb no PATH. Confira o Android SDK.', null));
-    if (!x.booted) return d.replaceChildren(emptyState('Emulador desligado', `Nenhum device conectado. O AVD configurado pode ser ligado daqui.`, 'Ligar emulador', ['MOD', 'B']));
-    d.replaceChildren(
+    if (!x.adb) return put(d, emptyState('adb não encontrado', 'O Spalla não achou o adb no PATH. Confira o Android SDK.', null));
+    if (!x.booted) return put(d, emptyState('Emulador desligado', `Nenhum device conectado. O AVD configurado pode ser ligado daqui.`, 'Ligar emulador', ['MOD', 'B']));
+    put(d, 
       h('div.title-row', null, h('h1', null, x.serial), statusChip('var(--ok)', 'check', 'pronto')),
       metrics([['Boot completo', x.booted ? 'sim' : 'não'], ['App instalado', x.installed ? 'sim' : 'não'], ['App rodando', x.running ? 'sim' : 'não'], ['Fase do wrapper', x.wrapperPhase]]),
       !x.running ? h('p.prose', null, x.wrapperPhase === 'building' ? 'O app não está aberto: o wrapper ainda está na fase de build.' : 'O app não está aberto.') : null);
@@ -674,19 +987,19 @@ function renderDetail(cur) {
 
   if (cur.kind === 'metro') {
     const m = state.metro;
-    if (!m.running || !m.lines.length) return d.replaceChildren(emptyState(m.running ? 'Metro sem saída ainda' : 'Metro parado',
+    if (!m.running || !m.lines.length) return put(d, emptyState(m.running ? 'Metro sem saída ainda' : 'Metro parado',
       m.running ? `Rodando na porta ${m.port}, aguardando o primeiro bundle.` : `Nada rodando na porta ${m.port}. Ele sobe sozinho com spalla run, depois do build.`,
       m.running ? null : 'Subir o Metro agora', ['↵']));
-    d.replaceChildren(h('div.title-row', null, h('h1', null, 'Metro'), statusChip('var(--run)', 'dot', `porta ${m.port}`)), renderLog(m.lines, {}));
+    put(d, h('div.title-row', null, h('h1', null, 'Metro'), statusChip('var(--run)', 'dot', `porta ${m.port}`)), renderLog(m.lines, {}));
     return;
   }
 
   if (cur.kind === 'logcat') {
     const x = state.device;
-    if (!x.running || !state.logcat.lines.length) return d.replaceChildren(emptyState('Sem logs do app ainda',
+    if (!x.running || !state.logcat.lines.length) return put(d, emptyState('Sem logs do app ainda',
       x.running ? 'O app está rodando, mas ainda não escreveu nada no Logcat.' : `O Logcat filtra pelo PID do ${state.config.package}, e o app não está rodando. As linhas aparecem aqui assim que ele abrir.`,
       x.running ? null : 'Abrir o app', ['↵']));
-    d.replaceChildren(h('div.title-row', null, h('h1', null, 'Logcat'), statusChip('var(--run)', 'dot', state.config.package)), renderLog(state.logcat.lines, {}));
+    put(d, h('div.title-row', null, h('h1', null, 'Logcat'), statusChip('var(--run)', 'dot', state.config.package)), renderLog(state.logcat.lines, {}));
   }
 }
 
@@ -704,7 +1017,7 @@ function renderFooter(cur) {
     : h('span.state', null, h('span.dot', { style: `background: var(${b && b.status === 'running' ? '--run' : b && b.status === 'failed' ? '--fail' : '--text-4'})` }), summary);
   const acts = actionsFor(cur);
   const primary = acts[0];
-  f.replaceChildren(left,
+  put(f, left,
     primary ? h('button.act', { type: 'button', onclick: () => runAction(primary.id, cur) }, primary.label, keys('↵')) : null,
     h('span.divider', { 'aria-hidden': 'true' }),
     h('button.act.secondary', { type: 'button', onclick: () => openActionPanel(cur) }, 'Ações', keys('MOD', 'K')));
@@ -793,6 +1106,11 @@ document.addEventListener('keydown', e => {
   }
 
   if (e.key === '/' && !inInput) { e.preventDefault(); $('search').focus(); return; }
+  if ((e.key === '[' || e.key === ']') && !inInput && ui.selected === 'report') {
+    e.preventDefault();
+    runAction(e.key === '[' ? 'prev-report' : 'next-report', currentItem(buildItems()));
+    return;
+  }
   if (e.key === 'Escape' && inInput) { e.target.blur(); return; }
 
   const items = selectable(buildItems());
@@ -849,6 +1167,20 @@ const Spalla = window.Spalla = {
     render();
   },
 
+  /** Novo resumo do agente gerenciador. report: { id, agent, at, file, markdown } */
+  addReport(report) {
+    const reps = state.reports || (state.reports = []);
+    const i = reps.findIndex(r => r.id === report.id);
+    if (i >= 0) reps[i] = report; else reps.unshift(report);
+    reps.sort((a, b) => b.at - a.at);
+    if (ui.reportIndex > 0 && i < 0) ui.reportIndex++;   // quem está lendo um antigo continua no mesmo
+    if (!ui.muted.has(String(report.agent).toLowerCase()) && 'Notification' in window && Notification.permission === 'granted') {
+      const p = reportProgress(report.markdown);
+      try { new Notification(`Novo resumo do ${report.agent}`, { body: p.total ? `${p.done} de ${p.total} itens concluídos` : firstLine(report.markdown), tag: 'spalla-report' }); } catch {}
+    }
+    render();
+  },
+
   /** Acrescenta linhas ao log do build atual. */
   appendBuildLines(lines) { state.build.lines.push(...lines); render(); },
 
@@ -873,7 +1205,29 @@ es.onerror = () => Spalla.update({ connection: 'reconnecting' });
 es.addEventListener('state',  e => Spalla.update(JSON.parse(e.data)));
 es.addEventListener('agent',  e => Spalla.upsertAgent(JSON.parse(e.data)));
 es.addEventListener('build-line', e => Spalla.appendBuildLines(JSON.parse(e.data)));
+es.addEventListener('report', e => Spalla.addReport(JSON.parse(e.data)));
 */
+
+/* ═══════════════════════════════════════════════════════════════════
+   >>> INTEGRAÇÃO <<<  Resumo do Maestro
+   Lado do servidor (sugestão):
+   • O Atlas grava cada resumo em .spalla/reports/<agente>/AAAAMMDD-HHMM.md
+     (.spalla/ já está no .git/info/exclude, então nada vaza pro repositório).
+   • O server observa a pasta (fs.watch) e, a cada arquivo novo ou alterado,
+     manda o evento SSE `report` com { id, agent, at, file, markdown }.
+   • GET /api/state inclui `reports` (os 20 mais recentes, novo primeiro).
+   ═══════════════════════════════════════════════════════════════════ */
+const REPORT_REQUEST = [
+  'Escreva um resumo da situação das demandas em markdown e salve em',
+  '.spalla/reports/atlas/$(date +%Y%m%d-%H%M).md, seguindo este formato:',
+  '# <projeto>: situação geral',
+  '**Resumo:** duas frases sobre o estado geral.',
+  '## Demandas  (tabela: Demanda | Agente | Status)',
+  '## <uma seção por demanda ativa>  (checklist com - [ ] e - [x])',
+  '## Bloqueios  (citação com >, só se houver)',
+  '## Decisões que precisam de você  (lista numerada, só se houver)',
+  '## Próximos passos'
+].join('\n');
 
 render();
 })();
