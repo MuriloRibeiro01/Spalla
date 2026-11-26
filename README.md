@@ -49,6 +49,7 @@ Servidor em Node puro, com streaming via SSE e tema escuro. Painéis:
 | **Emulador** | Device conectado, boot completo, app instalado/rodando |
 | **Histórico** | Últimos builds com duração e resultado |
 | **Agentes** | Um card por agente, com status, última ação e feed de eventos |
+| **Resumo do Maestro** | Último resumo do agente gerenciador em markdown, progresso pelos checkboxes e histórico |
 
 #### 🤖 Agentes e notificações
 - Integração via hooks no nível do usuário (ex.: Claude Code). Nada é alterado na config versionada dos projetos.
@@ -102,6 +103,7 @@ spalla build         # build com progresso e log
 spalla run           # instala, sobe o Metro e abre o app
 spalla logcat        # logcat filtrado pelo app
 spalla agent-event <agente> <tipo> [mensagem]   # usado pelos hooks
+spalla report <agente> [arquivo.md]   # salva um resumo em .md para o Spalla
 ```
 
 ### Roadmap
@@ -165,6 +167,7 @@ Plain Node server, SSE streaming, dark theme. Panels:
 | **Emulator** | Connected device, boot complete, app installed/running |
 | **History** | Recent builds with duration and result |
 | **Agents** | One card per agent, with status, last action and event feed |
+| **Maestro summary** | Latest summary from the managing agent in markdown, progress from checkboxes, and history |
 
 #### 🤖 Agents and notifications
 - Integrates through user-level hooks (e.g. Claude Code). Nothing changes in your projects' versioned config.
@@ -218,6 +221,7 @@ spalla build         # build with progress and logs
 spalla run           # install, start Metro and launch the app
 spalla logcat        # logcat filtered by app
 spalla agent-event <agent> <type> [message]   # used by hooks
+spalla report <agent> [file.md]   # save a summary as .md for Spalla
 ```
 
 ### Roadmap
