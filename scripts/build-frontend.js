@@ -107,13 +107,26 @@ once(`        : null);
 
 // 5. render(): mantém o scroll do log (ao vivo, acompanha o fim) -------------------
 once(`  renderDetail(cur);
-  renderFooter(cur);`, `  const lb = document.querySelector('.log-body');
+  renderFooter(cur);`, `  const pane = $('detail'), paneTop = pane.scrollTop, sameDetail = ui.lastDetail === ui.selected;
+  const lb = document.querySelector('.log-body');
   const prev = lb ? { id: ui.lastDetail, top: lb.scrollTop, bottom: lb.scrollHeight - lb.scrollTop - lb.clientHeight < 48 } : null;
   renderDetail(cur);
   const nb = document.querySelector('.log-body');
   if (nb) nb.scrollTop = (!prev || prev.id !== ui.selected || prev.bottom) ? nb.scrollHeight : prev.top;
+  pane.scrollTop = sameDetail ? paneTop : 0;   // re-render do mesmo item mantém a posição; trocar de item volta ao topo
   ui.lastDetail = ui.selected;
   renderFooter(cur);`, 'render scroll');
+
+// 5b. Layout: só o detalhe rola (>= 900px). Topbar, lista e rodapé ficam parados.
+//     Abaixo disso a página volta a empilhar lista e detalhe e rola inteira, como no design.
+once('</style>', `
+/* ── Painéis com rolagem própria ─────────────────────────────────────── */
+@media (min-width: 900px) {
+  .app { height: 100vh; min-height: 0; }
+  .body { flex-wrap: nowrap; overflow: hidden; }
+  .list, .detail { overflow-y: auto; min-height: 0; }
+}
+</style>`, 'css painéis fixos');
 
 // 6. API pública: remendos por partes (preserva addReport e o resto do design) --------
 once('const Spalla = window.Spalla = {',

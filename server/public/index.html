@@ -217,6 +217,13 @@ kbd { min-width: 22px; height: 22px; padding: 0 6px; display: inline-flex; align
 @media (prefers-reduced-motion: no-preference) {
   .row, .ap-item, .footer .act { transition: background-color .12s ease; }
 }
+
+/* ── Painéis com rolagem própria ─────────────────────────────────────── */
+@media (min-width: 900px) {
+  .app { height: 100vh; min-height: 0; }
+  .body { flex-wrap: nowrap; overflow: hidden; }
+  .list, .detail { overflow-y: auto; min-height: 0; }
+}
 </style>
 </head>
 <body>
@@ -992,11 +999,13 @@ function render() {
   if (cur) ui.selected = cur.id;
   renderTopbar();
   renderList(items, cur);
+  const pane = $('detail'), paneTop = pane.scrollTop, sameDetail = ui.lastDetail === ui.selected;
   const lb = document.querySelector('.log-body');
   const prev = lb ? { id: ui.lastDetail, top: lb.scrollTop, bottom: lb.scrollHeight - lb.scrollTop - lb.clientHeight < 48 } : null;
   renderDetail(cur);
   const nb = document.querySelector('.log-body');
   if (nb) nb.scrollTop = (!prev || prev.id !== ui.selected || prev.bottom) ? nb.scrollHeight : prev.top;
+  pane.scrollTop = sameDetail ? paneTop : 0;   // re-render do mesmo item mantém a posição; trocar de item volta ao topo
   ui.lastDetail = ui.selected;
   renderFooter(cur);
   renderActionPanel();
