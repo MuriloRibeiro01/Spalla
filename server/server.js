@@ -10,6 +10,7 @@ const { StringDecoder } = require('string_decoder');
 const { execFile, spawn } = require('child_process');
 const { findRoot, loadConfig, fwd } = require('../lib/util');
 const { append: appendAgentEvent } = require('../lib/event');
+const { createReports } = require('./reports');
 
 const argv = process.argv.slice(2);
 const arg = (n) => {
@@ -28,6 +29,9 @@ const logs = path.join(data, 'logs');
 const HOME_DIR = path.join(__dirname, '..');
 fs.mkdirSync(logs, { recursive: true });
 fs.mkdirSync(path.join(data, 'agents'), { recursive: true });
+
+// Resumos do agente gerenciador (.spalla/reports/<agente>/AAAAMMDD-HHMM.md). A pasta é criada aqui.
+const reports = createReports({ root, onReport: (r) => broadcast('report', r), log: (m) => console.warn(m) });
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 const POLL_MS = 500;
@@ -266,6 +270,7 @@ function fullState() {
     device: deviceView(),
     metro: { running: metroUp, port: cfg.metroPort, lines: tails.metro.lines.slice(-SNAP_LINES) },
     logcat: { lines: tails.logcat.lines.slice(-SNAP_LINES) },
+    reports: reports.list(20), // os 20 mais recentes de todos os agentes, mais novo primeiro
   };
 }
 
@@ -542,6 +547,18 @@ const server = http.createServer((req, res) => {
     return res.end(fs.readFileSync(indexFile));
   }
   if (u.pathname === '/api/state') return json(res, 200, fullState());
+  if (u.pathname.startsWith('/api/reports/')) {
+    // /api/reports/:agent/:id — só [a-z0-9_-]; o caminho nunca sai de .spalla/reports/
+    let parts;
+    try {
+      parts = u.pathname.slice('/api/reports/'.length).split('/').map(decodeURIComponent);
+    } catch (_) {
+      return json(res, 400, { error: 'parâmetros inválidos' });
+    }
+    if (parts.length !== 2 || !parts.every((p) => /^[a-z0-9_-]+$/.test(p))) return json(res, 400, { error: 'parâmetros inválidos' });
+    const rep = reports.read(parts[0], parts[1]);
+    return rep ? json(res, 200, rep) : json(res, 404, { error: 'resumo não encontrado' });
+  }
   if (u.pathname === '/stream') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     res.write('retry: 2000\n\n');
@@ -591,6 +608,7 @@ try {
   for (const e of readJsonl(agentsFile).slice(-3000)) ingestAgent(toAgentEvent(e));
 }
 pollDevice();
+reports.start(); // carga inicial + fs.watch (a pasta já existe)
 
 setInterval(() => {
   try {
