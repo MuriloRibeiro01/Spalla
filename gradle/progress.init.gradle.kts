@@ -1,5 +1,5 @@
 // devdash: grava eventos JSON (um por linha) do build em -PdevdashEvents=<arquivo>.
-//   {"t":"plan","build":"...","total":N}                       grafo pronto (uma vez por build incluído)
+//   {"t":"plan","build":"...","root":bool,"total":N}           grafo pronto (uma vez por build; root = build raiz)
 //   {"t":"task","path":":app:x","outcome":"EXECUTED|UP-TO-DATE|FROM-CACHE|SKIPPED|FAILED","start":ms,"end":ms}
 //   {"t":"end","tasksFailed":bool}                             fim do build raiz (só falhas de task; o resultado oficial vem do wrapper)
 // Usa BuildService + OperationCompletionListener (compatível com configuration cache).
@@ -62,7 +62,7 @@ if (devdashFile != null) {
         val total = allTasks.size
         val name = gradle.rootProject.name.replace("\"", "'")
         synchronized(DevdashListener::class.java) {
-            File(devdashFile).appendText("""{"t":"plan","build":"$name","total":$total}""" + "\n")
+            File(devdashFile).appendText("""{"t":"plan","build":"$name","root":${gradle.parent == null},"total":$total}""" + "\n")
         }
     }
 

@@ -27,6 +27,8 @@ uso: dev <comando> [args]
   logcat               logcat filtrado pelo PID do app (.devdash/logs/logcat.log)
   agent-event <agente> <tipo> [msg]   grava evento de agente (tipos: working tool needs_approval
                                       waiting_input done failed idle)
+  force-stop           mata o app à força (am force-stop)
+  tap <x> <y>          toque no device (pixels reais; adb input tap)
   status               imprime .devdash/status.json
   stop                 para Metro, logcat e dashboard iniciados em background
   gradle-stop          ./gradlew --stop (encerra os daemons do Gradle)
@@ -148,6 +150,7 @@ cmd_install() {
   "$ADB" install -r "$(winpath "$apk")"
   local rc=$?
   status phase=idle installResult="$([ $rc -eq 0 ] && echo OK || echo FAILED)"
+  [ $rc -eq 0 ] && touch "$DATA/installed-$variant.stamp"
   return $rc
 }
 
@@ -163,25 +166,37 @@ cmd_metro() {
 
 bg_self() { # nome args...   (reinvoca este script em background, com pidfile)
   local name="$1"; shift
-  (cd "$ROOT" && nohup "$SELF" "$@" >"$DATA/logs/$name.out" 2>&1 & echo $! >"$DATA/pids/$name.pid")
+  (cd "$ROOT" && nohup "$SELF" "$@" </dev/null >"$DATA/logs/$name.out" 2>&1 & echo $! >"$DATA/pids/$name.pid")
+}
+
+logcat_reader() { # lê linhas do logcat no stdin; grava e detecta crash
+  local line
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    printf '%s\n' "$line" >>"$DATA/logs/logcat.log"
+    case "$line" in *"FATAL EXCEPTION"*) emit dev failed "FATAL EXCEPTION no app $PKG" ;; esac
+  done
 }
 
 cmd_logcat() {
   [ -n "$PKG" ] || die "package não definido no config"
   ensure_device || exit 1
   : >"$DATA/logs/logcat.log"
-  local pid line
+  local pid cur lc
   while true; do
     pid="$("$ADB" shell pidof -s "$PKG" 2>/dev/null | tr -d '\r')"
     if [ -z "$pid" ]; then sleep 1; continue; fi
     echo "--- $PKG pid $pid ---" >>"$DATA/logs/logcat.log"
-    "$ADB" logcat --pid="$pid" -v threadtime 2>&1 | while IFS= read -r line; do
-      line="${line%$'\r'}"
-      printf '%s\n' "$line" >>"$DATA/logs/logcat.log"
-      case "$line" in *"FATAL EXCEPTION"*) emit dev failed "FATAL EXCEPTION no app $PKG (pid $pid)" ;; esac
+    "$ADB" logcat --pid="$pid" -v threadtime > >(logcat_reader) 2>&1 &
+    lc=$!
+    # o adb logcat --pid não termina quando o app morre: vigia o PID e reinicia se mudar
+    while kill -0 "$lc" 2>/dev/null; do
+      cur="$("$ADB" shell pidof -s "$PKG" 2>/dev/null | tr -d '\r')"
+      if [ "$cur" != "$pid" ]; then kill "$lc" 2>/dev/null; break; fi
+      sleep 2
     done
+    wait "$lc" 2>/dev/null
     echo "--- $PKG pid $pid encerrou ---" >>"$DATA/logs/logcat.log"
-    sleep 1
   done
 }
 
@@ -190,7 +205,11 @@ cmd_run() {
   local variant="${1:-debug}" i
   [ -n "$PKG" ] || die "package não definido no config"
   ensure_device || exit 1
+  local apk stamp; apk="$(apk_path "$variant")"; stamp="$DATA/installed-$variant.stamp"
   if ! "$ADB" shell pm path "$PKG" 2>/dev/null | grep -q package; then
+    cmd_install "$variant" || die "instalação falhou"
+  elif [ -f "$apk" ] && { [ ! -f "$stamp" ] || [ "$apk" -nt "$stamp" ]; }; then
+    log "APK mais novo que o instalado: reinstalando"
     cmd_install "$variant" || die "instalação falhou"
   fi
   if ! metro_up; then
@@ -252,6 +271,18 @@ cmd_prebuild() {
   return $rc
 }
 
+cmd_tap() {
+  [ $# -eq 2 ] || die "uso: dev tap <x> <y>"
+  ensure_device || exit 1
+  "$ADB" shell input tap "$1" "$2"
+}
+
+cmd_force_stop() {
+  [ -n "$PKG" ] || die "package não definido no config"
+  ensure_device || exit 1
+  "$ADB" shell am force-stop "$PKG"
+}
+
 cmd_gradle_stop() {
   ensure_android_dir
   (cd "$APP_DIR/android" && "$(gradlew_cmd)" --stop)
@@ -260,6 +291,8 @@ cmd_gradle_stop() {
 case "$CMD" in
   dash) cmd_dash "$@" ;;
   emulator) cmd_emulator ;;
+  force-stop) cmd_force_stop ;;
+  tap) cmd_tap "$@" ;;
   prebuild) cmd_prebuild "$@" ;;
   build) cmd_build "$@" ;;
   install) cmd_install "$@" ;;
